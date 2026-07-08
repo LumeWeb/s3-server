@@ -42,12 +42,20 @@ func BucketCreateMiddleware(next http.Handler, prov BucketCertProvisioner, hostB
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for domain := range provisionCh {
-				if err := prov.ProvisionCert(ctx, domain); err != nil {
-					if ctx.Err() != nil {
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case domain, ok := <-provisionCh:
+					if !ok {
 						return
 					}
-					log.Warn("failed to provision bucket cert", zap.String("domain", domain), zap.Error(err))
+					if err := prov.ProvisionCert(ctx, domain); err != nil {
+						if ctx.Err() != nil {
+							return
+						}
+						log.Warn("failed to provision bucket cert", zap.String("domain", domain), zap.Error(err))
+					}
 				}
 			}
 		}()
@@ -55,8 +63,9 @@ func BucketCreateMiddleware(next http.Handler, prov BucketCertProvisioner, hostB
 
 	shutdown := func() {
 		cancel()
-		close(provisionCh)
 		wg.Wait()
+		// close(provisionCh) omitted: workers exit via ctx cancellation;
+		// closing would race with concurrent sends from in-flight HTTP handlers.
 	}
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -83,6 +92,9 @@ func BucketCreateMiddleware(next http.Handler, prov BucketCertProvisioner, hostB
 		// Bucket created successfully — enqueue cert provisioning
 		// Go's default status code is 200 if WriteHeader was never called.
 		if rw.status == http.StatusOK || rw.status == 0 {
+			if ctx.Err() != nil {
+				return
+			}
 			for _, base := range hostBases {
 				domain := bucket + "." + base
 				select {
