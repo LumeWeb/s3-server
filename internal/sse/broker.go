@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"sync"
 	"time"
 
 	sseserver "github.com/apt304/sse-go/server"
@@ -64,7 +65,7 @@ type StatsEvent struct {
 
 // StatsFetcher retrieves upload stats from the s3d admin API.
 type StatsFetcher interface {
-	FetchStats() (*StatsEvent, error)
+	FetchStats(ctx context.Context) (*StatsEvent, error)
 }
 
 // Broker owns the SSE server and provides helpers for publishing dashboard
@@ -73,13 +74,17 @@ type Broker struct {
 	server        *sseserver.Server
 	store         store.Store
 	backendStatus func() status.Status
-	initError     func() string
 	keyStore      func() backend.S3DStore
-	statsFetcher  StatsFetcher
 	log           *zap.Logger
 
 	// startedAt tracks server uptime for dashboard events.
 	startedAt time.Time
+
+	// mu guards statsFetcher and initError, which are set after construction
+	// but read concurrently by StartStatusLoop's goroutine.
+	mu           sync.RWMutex
+	statsFetcher StatsFetcher
+	initError    func() string
 }
 
 // NewBroker creates a Broker backed by a drop-oldest subscriber.
@@ -103,12 +108,16 @@ func NewBroker(s store.Store, backendStatus func() status.Status, keyStore func(
 // SetStatsFetcher sets the StatsFetcher used to publish periodic upload stats.
 // Called after admin handler is available.
 func (b *Broker) SetStatsFetcher(f StatsFetcher) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	b.statsFetcher = f
 }
 
 // SetInitError sets the function used to retrieve backend init error messages.
 // Called after the backend manager is wired up.
 func (b *Broker) SetInitError(f func() string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	b.initError = f
 }
 
@@ -189,7 +198,7 @@ func (b *Broker) StartStatusLoop(ctx context.Context, version string) {
 
 		// publish immediately on start
 		b.publishStatus(version)
-		b.publishStats()
+		b.publishStats(ctx)
 
 		for {
 			select {
@@ -197,7 +206,7 @@ func (b *Broker) StartStatusLoop(ctx context.Context, version string) {
 				return
 			case <-ticker.C:
 				b.publishStatus(version)
-				b.publishStats()
+				b.publishStats(ctx)
 			}
 		}
 	}()
@@ -234,18 +243,24 @@ func (b *Broker) publishStatus(version string) {
 		Uptime:     time.Since(b.startedAt).Truncate(time.Second).String(),
 	}
 	if b.initError != nil {
-		evt.InitError = b.initError()
+		b.mu.RLock()
+		initErrFn := b.initError
+		b.mu.RUnlock()
+		evt.InitError = initErrFn()
 	}
 	if err := b.PublishDashboard(evt); err != nil {
 		b.log.Debug("failed to publish dashboard status", zap.Error(err))
 	}
 }
 
-func (b *Broker) publishStats() {
-	if b.statsFetcher == nil {
+func (b *Broker) publishStats(ctx context.Context) {
+	b.mu.RLock()
+	fetcher := b.statsFetcher
+	b.mu.RUnlock()
+	if fetcher == nil {
 		return
 	}
-	evt, err := b.statsFetcher.FetchStats()
+	evt, err := fetcher.FetchStats(ctx)
 	if err != nil {
 		b.log.Debug("failed to fetch stats for sse", zap.Error(err))
 		return

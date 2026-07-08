@@ -2,6 +2,7 @@ package sse
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 
@@ -17,12 +18,15 @@ type AdminStatsFetcher struct {
 
 // FetchStats calls the s3d admin /stats/uploads endpoint and returns the
 // parsed stats as a StatsEvent suitable for SSE publishing.
-func (f *AdminStatsFetcher) FetchStats() (*StatsEvent, error) {
+func (f *AdminStatsFetcher) FetchStats(ctx context.Context) (*StatsEvent, error) {
 	if f.AdminHandler == nil {
 		return nil, nil
 	}
 
-	req, _ := http.NewRequest("GET", "/stats/uploads", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "/stats/uploads", nil)
+	if err != nil {
+		return nil, err
+	}
 	rec := &captureRecorder{header: make(http.Header)}
 	f.AdminHandler.ServeHTTP(rec, req)
 	if rec.code == 0 {
