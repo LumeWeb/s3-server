@@ -11,8 +11,9 @@ RUN go mod download
 
 # Copy source and build
 COPY . .
+ARG VERSION=dev
 RUN CGO_ENABLED=1 GOOS=linux go build \
-    -ldflags="-s -w -X main.appVersion=$(git describe --tags --always --dirty 2>/dev/null || echo dev)" \
+    -ldflags="-s -w -X main.appVersion=${VERSION}" \
     -o /bin/s3-server ./cmd/s3-server
 
 # Runtime stage
