@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sort"
@@ -512,4 +513,80 @@ func TestOnboardingFlow_AdminThenKeys(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, StateComplete, svc.fsm.State())
 	assert.True(t, init.initCalled)
+}
+
+// Regression: SetAppKeyHandler when SetOnboardingState fails — the FSM
+// has advanced but persist failed. The store must NOT be closed; the state
+// is StateAppKeySet and sqliteStore intact so onboarding can proceed.
+func TestSetAppKeyHandler_PersistFailure_KeepsStore(t *testing.T) {
+	svc, mockStore, testStore, _ := newTestService(t, StateAdminSet)
+
+	mockStore.EXPECT().S3Config().Return(config.S3Config{Directory: "/tmp/test-s3d"})
+	mockStore.EXPECT().SetOnboardingState("app_key_set").Return(errors.New("disk full"))
+
+	var appKey [32]byte
+	copy(appKey[:], []byte("01234567890123456789012345678901"))
+	encrypted := encryptForService(svc, appKey[:])
+
+	e := echo.New()
+	body := `{"encrypted_app_key":"` + encrypted + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/onboarding/app-key", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := svc.SetAppKeyHandler(c)
+	require.NoError(t, err)
+	// Handler returns 200 — FSM advanced, store kept, persist failure logged.
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, StateAppKeySet, svc.fsm.State())
+	assert.NotNil(t, svc.sqliteStore, "sqliteStore must remain open on persist failure")
+	assert.Equal(t, testStore, svc.sqliteStore)
+}
+
+// Regression: SetAdminPasswordHandler returns 500 on transitionTo failure
+// instead of swallowing the error and returning 200.
+func TestSetAdminPasswordHandler_TransitionFailure_ReturnsError(t *testing.T) {
+	svc, mockStore, _, _ := newTestService(t, StateComplete)
+
+	// State is Complete → SetAdminPassword should be rejected before
+	// transitionTo is called. But we want to test transitionTo failure
+	// specifically. Force the FSM into a state where the password was set
+	// but transition fails by having the store fail.
+	// Use StatePending so the handler proceeds past the state check.
+	svc.fsm = NewFSM(StatePending) // reset to pending
+	mockStore.EXPECT().SetAdminPassword("goodpassword").Return(nil)
+	// SetOnboardingState fails — transitionTo returns error
+	mockStore.EXPECT().SetOnboardingState("admin_password_set").Return(errors.New("disk full"))
+
+	e := echo.New()
+	body := `{"password":"goodpassword"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/onboarding/admin-password", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := svc.SetAdminPasswordHandler(c)
+	require.NoError(t, err)
+	// Must return 500, not 200 — the error must not be swallowed.
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+}
+
+// Regression: SetAccessKeysHandler when transitionTo(StateComplete) fails
+// returns 500 instead of a misleading 200.
+func TestSetAccessKeysHandler_TransitionFailure_ReturnsError(t *testing.T) {
+	svc, mockStore, testStore, _ := newTestService(t, StateAppKeySet)
+	svc.sqliteStore = testStore
+	// SetOnboardingState fails — transitionTo returns error
+	mockStore.EXPECT().SetOnboardingState("complete").Return(errors.New("disk full"))
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/api/onboarding/access-keys", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := svc.SetAccessKeysHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
 }
