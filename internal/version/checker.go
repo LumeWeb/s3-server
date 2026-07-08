@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Masterminds/semver/v3"
@@ -34,6 +35,7 @@ type GHCRChecker struct {
 	interval       time.Duration
 	log            *zap.Logger
 
+	mu     sync.RWMutex
 	result CheckResult
 }
 
@@ -55,12 +57,17 @@ func (c *GHCRChecker) SetInterval(d time.Duration) {
 }
 
 func (c *GHCRChecker) Result() CheckResult {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return c.result
 }
 
 func (c *GHCRChecker) Start(ctx context.Context) {
 	c.check(ctx)
 
+	if c.interval <= 0 {
+		c.interval = 24 * time.Hour
+	}
 	ticker := time.NewTicker(c.interval)
 	defer ticker.Stop()
 
@@ -81,7 +88,9 @@ func (c *GHCRChecker) check(ctx context.Context) {
 		return
 	}
 
+	c.mu.Lock()
 	c.result = *result
+	c.mu.Unlock()
 
 	if result.UpdateAvailable {
 		c.log.Info("update available",
