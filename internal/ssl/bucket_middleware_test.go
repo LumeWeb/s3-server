@@ -42,7 +42,8 @@ func TestBucketCreateMiddleware_NotPut(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	h := BucketCreateMiddleware(inner, prov, []string{"s3.example.com"}, testutil.NewTestLogger())
+	h, cancel := BucketCreateMiddleware(inner, prov, []string{"s3.example.com"}, testutil.NewTestLogger())
+	defer cancel()
 
 	req := httptest.NewRequest(http.MethodGet, "/mybucket", nil)
 	rec := httptest.NewRecorder()
@@ -58,7 +59,8 @@ func TestBucketCreateMiddleware_ObjectPut(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	h := BucketCreateMiddleware(inner, prov, []string{"s3.example.com"}, testutil.NewTestLogger())
+	h, cancel := BucketCreateMiddleware(inner, prov, []string{"s3.example.com"}, testutil.NewTestLogger())
+	defer cancel()
 
 	// PUT with object path — not a bucket creation
 	req := httptest.NewRequest(http.MethodPut, "/mybucket/myobject", nil)
@@ -76,7 +78,8 @@ func TestBucketCreateMiddleware_BucketCreated(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	h := BucketCreateMiddleware(inner, prov, []string{"s3.example.com"}, testutil.NewTestLogger())
+	h, cancel := BucketCreateMiddleware(inner, prov, []string{"s3.example.com"}, testutil.NewTestLogger())
+	defer cancel()
 
 	req := httptest.NewRequest(http.MethodPut, "/mybucket", nil)
 	rec := httptest.NewRecorder()
@@ -96,7 +99,8 @@ func TestBucketCreateMiddleware_BucketCreated_MultipleHostBases(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	h := BucketCreateMiddleware(inner, prov, []string{"s3.example.com", "storage.example.org"}, testutil.NewTestLogger())
+	h, cancel := BucketCreateMiddleware(inner, prov, []string{"s3.example.com", "storage.example.org"}, testutil.NewTestLogger())
+	defer cancel()
 
 	req := httptest.NewRequest(http.MethodPut, "/mybucket", nil)
 	rec := httptest.NewRecorder()
@@ -115,7 +119,8 @@ func TestBucketCreateMiddleware_BucketCreationFailed(t *testing.T) {
 		w.WriteHeader(http.StatusConflict) // BucketAlreadyExists
 	})
 
-	h := BucketCreateMiddleware(inner, prov, []string{"s3.example.com"}, testutil.NewTestLogger())
+	h, cancel := BucketCreateMiddleware(inner, prov, []string{"s3.example.com"}, testutil.NewTestLogger())
+	defer cancel()
 
 	req := httptest.NewRequest(http.MethodPut, "/mybucket", nil)
 	rec := httptest.NewRecorder()
@@ -131,7 +136,7 @@ func TestBucketCreateMiddleware_NoProvisioner(t *testing.T) {
 	})
 
 	// nil provisioner — middleware should pass through
-	h := BucketCreateMiddleware(inner, nil, []string{"s3.example.com"}, testutil.NewTestLogger())
+	h, _ := BucketCreateMiddleware(inner, nil, []string{"s3.example.com"}, testutil.NewTestLogger())
 
 	req := httptest.NewRequest(http.MethodPut, "/mybucket", nil)
 	rec := httptest.NewRecorder()
@@ -146,7 +151,7 @@ func TestBucketCreateMiddleware_NoHostBases(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	h := BucketCreateMiddleware(inner, prov, nil, testutil.NewTestLogger())
+	h, _ := BucketCreateMiddleware(inner, prov, nil, testutil.NewTestLogger())
 
 	req := httptest.NewRequest(http.MethodPut, "/mybucket", nil)
 	rec := httptest.NewRecorder()
@@ -162,7 +167,8 @@ func TestBucketCreateMiddleware_EmptyBucketName(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	h := BucketCreateMiddleware(inner, prov, []string{"s3.example.com"}, testutil.NewTestLogger())
+	h, cancel := BucketCreateMiddleware(inner, prov, []string{"s3.example.com"}, testutil.NewTestLogger())
+	defer cancel()
 
 	// Root path — not a bucket creation
 	req := httptest.NewRequest(http.MethodPut, "/", nil)
@@ -180,7 +186,8 @@ func TestBucketCreateMiddleware_ProvisionError(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	h := BucketCreateMiddleware(inner, prov, []string{"s3.example.com"}, testutil.NewTestLogger())
+	h, cancel := BucketCreateMiddleware(inner, prov, []string{"s3.example.com"}, testutil.NewTestLogger())
+	defer cancel()
 
 	req := httptest.NewRequest(http.MethodPut, "/mybucket", nil)
 	rec := httptest.NewRecorder()
@@ -201,7 +208,8 @@ func TestBucketCreateMiddleware_DefaultStatusOK(t *testing.T) {
 		w.Write([]byte("ok")) //nolint:errcheck
 	})
 
-	h := BucketCreateMiddleware(inner, prov, []string{"s3.example.com"}, testutil.NewTestLogger())
+	h, cancel := BucketCreateMiddleware(inner, prov, []string{"s3.example.com"}, testutil.NewTestLogger())
+	defer cancel()
 
 	req := httptest.NewRequest(http.MethodPut, "/mybucket", nil)
 	rec := httptest.NewRecorder()

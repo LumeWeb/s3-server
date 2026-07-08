@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"sync"
 
 	"go.uber.org/zap"
 )
@@ -14,20 +15,51 @@ type BucketCertProvisioner interface {
 	ProvisionCert(ctx context.Context, domain string) error
 }
 
+// maxProvisionWorkers limits concurrent ACME provisioning goroutines.
+const maxProvisionWorkers = 4
+
 // BucketCreateMiddleware wraps an http.Handler (the s3d S3 handler) and
 // intercepts successful PUT bucket creation requests. When SSL is managed
 // and host bases are configured, it provisions a certificate for
-// {bucket}.{hostbase} in a background goroutine.
+// {bucket}.{hostbase} via a bounded worker pool.
+//
+// The pool uses a context scoped to the provisioner's lifetime. Call
+// the returned cancel func during shutdown to abort in-flight ACME I/O.
 //
 // Detection: PUT request where URL path is /{bucket} with no object key
 // (single path segment after the leading slash). Response status 200 means
 // the bucket was created successfully.
-func BucketCreateMiddleware(next http.Handler, prov BucketCertProvisioner, hostBases []string, log *zap.Logger) http.Handler {
+func BucketCreateMiddleware(next http.Handler, prov BucketCertProvisioner, hostBases []string, log *zap.Logger) (http.Handler, context.CancelFunc) {
 	if prov == nil || len(hostBases) == 0 {
-		return next
+		return next, func() {}
 	}
 
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithCancel(context.Background())
+	provisionCh := make(chan string, len(hostBases)*4)
+
+	var wg sync.WaitGroup
+	for range maxProvisionWorkers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for domain := range provisionCh {
+				if err := prov.ProvisionCert(ctx, domain); err != nil {
+					if ctx.Err() != nil {
+						return
+					}
+					log.Warn("failed to provision bucket cert", zap.String("domain", domain), zap.Error(err))
+				}
+			}
+		}()
+	}
+
+	shutdown := func() {
+		cancel()
+		close(provisionCh)
+		wg.Wait()
+	}
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPut {
 			next.ServeHTTP(w, r)
 			return
@@ -48,19 +80,21 @@ func BucketCreateMiddleware(next http.Handler, prov BucketCertProvisioner, hostB
 		rw := &statusCaptureWriter{ResponseWriter: w}
 		next.ServeHTTP(rw, r)
 
-		// Bucket created successfully — provision certs in background
+		// Bucket created successfully — enqueue cert provisioning
 		// Go's default status code is 200 if WriteHeader was never called.
 		if rw.status == http.StatusOK || rw.status == 0 {
 			for _, base := range hostBases {
 				domain := bucket + "." + base
-				go func(d string) {
-					if err := prov.ProvisionCert(context.Background(), d); err != nil {
-						log.Warn("failed to provision bucket cert", zap.String("domain", d), zap.Error(err))
-					}
-				}(domain)
+				select {
+				case provisionCh <- domain:
+				default:
+					log.Warn("provision queue full, skipping", zap.String("domain", domain))
+				}
 			}
 		}
 	})
+
+	return handler, shutdown
 }
 
 // statusCaptureWriter wraps http.ResponseWriter to capture the status code.
