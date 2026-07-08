@@ -89,6 +89,9 @@ func (m *Manager) IsAutoUpdateOn() bool {
 
 // EnableAutoUpdate removes the disabled flag and writes the enabled flag.
 func (m *Manager) EnableAutoUpdate() error {
+	if !m.IsAvailable() {
+		return nil
+	}
 	dir := m.stateDir
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -107,6 +110,9 @@ func (m *Manager) EnableAutoUpdate() error {
 
 // DisableAutoUpdate writes the disabled flag and removes the enabled flag.
 func (m *Manager) DisableAutoUpdate() error {
+	if !m.IsAvailable() {
+		return nil
+	}
 	dir := m.stateDir
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -126,6 +132,9 @@ func (m *Manager) DisableAutoUpdate() error {
 // TriggerUpdate creates the update.trigger flag file to request an
 // immediate update from the sidecar.
 func (m *Manager) TriggerUpdate() error {
+	if !m.IsAvailable() {
+		return nil
+	}
 	dir := m.stateDir
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
