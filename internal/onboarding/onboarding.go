@@ -277,15 +277,19 @@ func (svc *Service) SetAppKeyHandler(c *echo.Context) error {
 	}
 
 	// hold for the backend initializer to use when access keys arrive
+	// (only if the transition succeeds; otherwise close the store)
+	if err := svc.transitionTo(StateAppKeySet); err != nil {
+		svc.log.Error("failed to update onboarding state", zap.Error(err))
+		if closeErr := sqliteStore.Close(); closeErr != nil {
+			svc.log.Error("failed to close database after state transition error", zap.Error(closeErr))
+		}
+		return api.SendInternal(c, api.TypeOnboardingStateFailed, "failed to update onboarding state", err)
+	}
+
 	svc.mu.Lock()
 	svc.sqliteStore = sqliteStore
 	svc.mu.Unlock()
 	svc.log.Info("app key stored")
-
-	if err := svc.transitionTo(StateAppKeySet); err != nil {
-		svc.log.Error("failed to update onboarding state", zap.Error(err))
-		return api.SendInternal(c, api.TypeOnboardingStateFailed, "failed to update onboarding state", err)
-	}
 
 	return c.JSON(http.StatusOK, OnboardingStepResponse{Status: "app_key_set"})
 }
@@ -394,6 +398,7 @@ func (svc *Service) SetAdminPasswordHandler(c *echo.Context) error {
 
 	if err := svc.transitionTo(StateAdminSet); err != nil {
 		svc.log.Error("failed to update onboarding state", zap.Error(err))
+		return api.SendInternal(c, api.TypeOnboardingStateFailed, "failed to update onboarding state", err)
 	}
 
 	return c.JSON(http.StatusOK, OnboardingStepResponse{Status: "admin_password_set"})
