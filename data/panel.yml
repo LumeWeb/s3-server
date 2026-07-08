@@ -1,0 +1,16 @@
+# admin_password_hash is generated on first run via onboarding
+onboarding_state: ""
+log:
+    format: json
+    level: info
+s3:
+    available_indexers:
+        - https://sia.pinner.xyz
+        - https://sia.storage
+    directory: /var/lib/s3-server
+    host_bases: []
+    indexer_url: https://sia.pinner.xyz
+ssl:
+    acme_dir_url: ""
+    acme_email: ""
+    mode: none

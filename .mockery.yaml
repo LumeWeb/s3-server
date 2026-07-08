@@ -1,0 +1,30 @@
+filename: "{{.InterfaceName}}.go"
+packages:
+  go.lumeweb.com/s3-server/internal/store:
+    config:
+      dir: ./internal/store/mocks
+    interfaces:
+      Store: {}
+      SessionManager: {}
+  go.lumeweb.com/s3-server/internal/handlers:
+    config:
+      dir: ./internal/handlers/mocks
+    interfaces:
+      S3Swapper: {}
+  go.lumeweb.com/s3-server/internal/backend:
+    config:
+      dir: ./internal/backend/mocks
+    interfaces:
+      Backend: {}
+      S3DStore: {}
+      Factory: {}
+  go.lumeweb.com/s3-server/internal/onboarding:
+    config:
+      dir: ./internal/onboarding/mocks
+    interfaces:
+      BackendInitializer: {}
+  go.lumeweb.com/s3-server/internal/version:
+    config:
+      dir: ./internal/version/mocks
+    interfaces:
+      Checker: {}
