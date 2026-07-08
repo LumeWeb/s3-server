@@ -515,11 +515,11 @@ func TestOnboardingFlow_AdminThenKeys(t *testing.T) {
 	assert.True(t, init.initCalled)
 }
 
-// Regression: SetAppKeyHandler when SetOnboardingState fails — the FSM
-// has advanced but persist failed. The store must NOT be closed; the state
-// is StateAppKeySet and sqliteStore intact so onboarding can proceed.
-func TestSetAppKeyHandler_PersistFailure_KeepsStore(t *testing.T) {
-	svc, mockStore, testStore, _ := newTestService(t, StateAdminSet)
+// Regression: SetAppKeyHandler when SetOnboardingState fails — persist runs
+// before FSM transition, so on failure the FSM stays at StateAdminSet and
+// the sqliteStore is closed. Returns 500, not a misleading 200.
+func TestSetAppKeyHandler_PersistFailure_ReturnsError(t *testing.T) {
+	svc, mockStore, _, _ := newTestService(t, StateAdminSet)
 
 	mockStore.EXPECT().S3Config().Return(config.S3Config{Directory: "/tmp/test-s3d"})
 	mockStore.EXPECT().SetOnboardingState("app_key_set").Return(errors.New("disk full"))
@@ -537,11 +537,9 @@ func TestSetAppKeyHandler_PersistFailure_KeepsStore(t *testing.T) {
 
 	err := svc.SetAppKeyHandler(c)
 	require.NoError(t, err)
-	// Handler returns 200 — FSM advanced, store kept, persist failure logged.
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, StateAppKeySet, svc.fsm.State())
-	assert.NotNil(t, svc.sqliteStore, "sqliteStore must remain open on persist failure")
-	assert.Equal(t, testStore, svc.sqliteStore)
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+	assert.Equal(t, StateAdminSet, svc.fsm.State(), "FSM must not advance on persist failure")
+	assert.Nil(t, svc.sqliteStore, "sqliteStore must be closed on persist failure")
 }
 
 // Regression: SetAdminPasswordHandler returns 500 on transitionTo failure

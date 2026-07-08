@@ -276,20 +276,22 @@ func (svc *Service) SetAppKeyHandler(c *echo.Context) error {
 		return api.SendInternal(c, api.TypeDatabaseStoreFailed, "failed to store app key", err)
 	}
 
-	// hold for the backend initializer to use when access keys arrive
-	// (only if the transition succeeds; otherwise close the store)
+	// Persist the new onboarding state first. If this fails, the FSM
+	// must NOT advance — the store stays at StateAdminSet for a clean retry.
+	if err := svc.store.SetOnboardingState(string(StateAppKeySet)); err != nil {
+		svc.log.Error("failed to persist onboarding state", zap.Error(err))
+		if closeErr := sqliteStore.Close(); closeErr != nil {
+			svc.log.Error("failed to close database after persist error", zap.Error(closeErr))
+		}
+		return api.SendInternal(c, api.TypeOnboardingStateFailed, "failed to update onboarding state", err)
+	}
+	// Persist succeeded — advance the FSM.
 	if err := svc.fsm.Transition(StateAppKeySet); err != nil {
 		svc.log.Error("failed to transition onboarding state", zap.Error(err))
 		if closeErr := sqliteStore.Close(); closeErr != nil {
 			svc.log.Error("failed to close database after state transition error", zap.Error(closeErr))
 		}
 		return api.SendInternal(c, api.TypeOnboardingStateFailed, "failed to update onboarding state", err)
-	}
-	// Persist the new state. If this fails, the FSM has already advanced
-	// in-memory — keep the sqliteStore so onboarding can proceed (the state
-	// will be re-persisted on next transition or reload).
-	if err := svc.store.SetOnboardingState(string(StateAppKeySet)); err != nil {
-		svc.log.Error("failed to persist onboarding state", zap.Error(err))
 	}
 
 	svc.mu.Lock()
