@@ -1,0 +1,20 @@
+version: "3.8"
+
+services:
+  s3-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: lumeweb/s3-server:latest
+    container_name: s3-server
+    restart: unless-stopped
+    ports:
+      - "${S3_SERVER_PORT:-8080}:8080"
+    volumes:
+      - s3-server-data:/var/lib/s3-server
+    environment:
+      - S3_SERVER_LOG_LEVEL=${S3_SERVER_LOG_LEVEL:-info}
+      - S3_SERVER_LOG_FORMAT=${S3_SERVER_LOG_FORMAT:-json}
+
+volumes:
+  s3-server-data:

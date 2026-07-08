@@ -1,0 +1,7 @@
+.env
+.git
+node_modules/
+bin/
+.worktrees/
+data/*
+!data/panel.yml
