@@ -18,6 +18,9 @@ import (
 
 const testUser = "test-user"
 
+// testSecretKey is a non-sensitive placeholder for test fixtures.
+const testSecretKey = "test-secret-key-do-not-use-in-prod"
+
 // stubFactory implements Factory for testing.
 type stubFactory struct {
 	openDBFn func(dbPath string) (S3DStore, error)
@@ -171,7 +174,7 @@ func TestManager_InitFromConfig(t *testing.T) {
 	s3Cfg := config.S3Config{Directory: "/tmp/s3d", IndexerURL: "https://sia.storage"}
 	st.s3Cfg = s3Cfg
 
-	stubStore := &stubS3DStore{accessKeys: []AccessKeyInfo{{AccessKeyID: "AKIA123", SecretKey: "secret123", UserName: testUser}}}
+	stubStore := &stubS3DStore{accessKeys: []AccessKeyInfo{{AccessKeyID: "AKIA123", SecretKey: testSecretKey, UserName: testUser}}}
 	stubBack := &stubBackend{}
 	cleanupCalled := false
 
@@ -214,7 +217,7 @@ func TestManager_InitFromConfig_InitError(t *testing.T) {
 
 	st.s3Cfg = config.S3Config{Directory: "/tmp/s3d"}
 
-	stubStore := &stubS3DStore{accessKeys: []AccessKeyInfo{{AccessKeyID: "AKIA123", SecretKey: "secret123", UserName: testUser}}}
+	stubStore := &stubS3DStore{accessKeys: []AccessKeyInfo{{AccessKeyID: "AKIA123", SecretKey: testSecretKey, UserName: testUser}}}
 	factory.openDBFn = func(dbPath string) (S3DStore, error) { return stubStore, nil }
 	factory.initFn = func(ctx context.Context, cfg config.S3Config, store S3DStore) (Backend, http.Handler, func(), error) {
 		return nil, nil, nil, assert.AnError
@@ -231,7 +234,7 @@ func TestManager_InitAfterOnboarding(t *testing.T) {
 	s3Cfg := config.S3Config{Directory: "/tmp/s3d", IndexerURL: "https://sia.storage"}
 	st.s3Cfg = s3Cfg
 
-	stubStore := &stubS3DStore{accessKeys: []AccessKeyInfo{{AccessKeyID: "AKIA123", SecretKey: "secret123", UserName: testUser}}}
+	stubStore := &stubS3DStore{accessKeys: []AccessKeyInfo{{AccessKeyID: "AKIA123", SecretKey: testSecretKey, UserName: testUser}}}
 	stubBack := &stubBackend{}
 
 	factory.initFn = func(ctx context.Context, cfg config.S3Config, store S3DStore) (Backend, http.Handler, func(), error) {
@@ -280,7 +283,7 @@ func TestManager_Cleanup_WithBackend(t *testing.T) {
 	s3Cfg := config.S3Config{Directory: "/tmp/s3d"}
 	st.s3Cfg = s3Cfg
 
-	stubStore := &stubS3DStore{accessKeys: []AccessKeyInfo{{AccessKeyID: "AKIA123", SecretKey: "secret123", UserName: testUser}}}
+	stubStore := &stubS3DStore{accessKeys: []AccessKeyInfo{{AccessKeyID: "AKIA123", SecretKey: testSecretKey, UserName: testUser}}}
 	stubBack := &stubBackend{}
 	cleanupCalled := false
 
@@ -314,7 +317,7 @@ func TestManager_Status_Transitions(t *testing.T) {
 	s3Cfg := config.S3Config{Directory: "/tmp/s3d", IndexerURL: "https://sia.storage"}
 	st.s3Cfg = s3Cfg
 
-	stubStore := &stubS3DStore{accessKeys: []AccessKeyInfo{{AccessKeyID: "AKIA123", SecretKey: "secret123", UserName: testUser}}}
+	stubStore := &stubS3DStore{accessKeys: []AccessKeyInfo{{AccessKeyID: "AKIA123", SecretKey: testSecretKey, UserName: testUser}}}
 	stubBack := &stubBackend{}
 	factory.openDBFn = func(dbPath string) (S3DStore, error) { return stubStore, nil }
 	factory.initFn = func(ctx context.Context, cfg config.S3Config, store S3DStore) (Backend, http.Handler, func(), error) {
@@ -338,7 +341,7 @@ func TestManager_Restart(t *testing.T) {
 	st.s3Cfg = s3Cfg
 
 	// first init
-	stubStore := &stubS3DStore{accessKeys: []AccessKeyInfo{{AccessKeyID: "AKIA123", SecretKey: "secret123", UserName: testUser}}}
+	stubStore := &stubS3DStore{accessKeys: []AccessKeyInfo{{AccessKeyID: "AKIA123", SecretKey: testSecretKey, UserName: testUser}}}
 	stubBack1 := &stubBackend{}
 	cleanup1Called := false
 
@@ -356,7 +359,7 @@ func TestManager_Restart(t *testing.T) {
 	assert.Equal(t, stubBack1, m.Backend())
 
 	// now restart with an additional key persisted directly in the store
-	stubStore.accessKeys = append(stubStore.accessKeys, AccessKeyInfo{AccessKeyID: "AKIA456", SecretKey: "secret456", UserName: testUser})
+	stubStore.accessKeys = append(stubStore.accessKeys, AccessKeyInfo{AccessKeyID: "AKIA456", SecretKey: testSecretKey, UserName: testUser})
 	stubBack2 := &stubBackend{}
 	cleanup2Called := false
 
@@ -382,7 +385,7 @@ func TestManager_Restart_Concurrent(t *testing.T) {
 
 	var initCount atomic.Int32
 	factory.openDBFn = func(dbPath string) (S3DStore, error) {
-		return &stubS3DStore{accessKeys: []AccessKeyInfo{{AccessKeyID: "AKIA123", SecretKey: "secret123", UserName: testUser}}}, nil
+		return &stubS3DStore{accessKeys: []AccessKeyInfo{{AccessKeyID: "AKIA123", SecretKey: testSecretKey, UserName: testUser}}}, nil
 	}
 	factory.initFn = func(ctx context.Context, cfg config.S3Config, store S3DStore) (Backend, http.Handler, func(), error) {
 		initCount.Add(1)

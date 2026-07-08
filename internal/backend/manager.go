@@ -77,6 +77,8 @@ type Manager struct {
 	sqliteStore S3DStore
 	cleanup     func()
 	initError   string // non-empty when InitFromConfig failed at startup
+
+	restartMu sync.Mutex // serializes concurrent Restart calls
 }
 
 // NewManager creates a backend manager.
@@ -148,6 +150,7 @@ func (m *Manager) InitAfterOnboarding(ctx context.Context, sqliteStore S3DStore)
 	m.backend = backend
 	m.sqliteStore = sqliteStore
 	m.cleanup = cleanup
+	m.initError = "" // clear any stale error from a previous failed init
 	m.mu.Unlock()
 
 	m.s3.Swap(s3Handler)
@@ -171,45 +174,36 @@ func (m *Manager) KeyStore() S3DStore {
 func (m *Manager) Cleanup() {
 	m.mu.Lock()
 	cleanup := m.cleanup
-	sqliteStore := m.sqliteStore
 	m.cleanup = nil
 	m.sqliteStore = nil
 	m.backend = nil
 	m.mu.Unlock()
 
-	// I/O outside the lock
+	// I/O outside the lock — cleanup closure already closes the sqlite store
 	if cleanup != nil {
 		cleanup()
-	}
-	if sqliteStore != nil {
-		if err := sqliteStore.Close(); err != nil {
-			m.log.Error("failed to close database during cleanup", zap.Error(err))
-		}
 	}
 }
 
 // Restart tears down the running backend and re-initializes it from the current config.
 // Called after config changes (e.g. access key changes) that require a backend restart.
 func (m *Manager) Restart(ctx context.Context) error {
+	m.restartMu.Lock()
+	defer m.restartMu.Unlock()
+
 	m.log.Info("restarting s3d backend")
 
 	// Grab current resources under lock, nil out the fields
 	m.mu.Lock()
 	cleanup := m.cleanup
-	sqliteStore := m.sqliteStore
 	m.cleanup = nil
 	m.sqliteStore = nil
 	m.backend = nil
 	m.mu.Unlock()
 
-	// I/O outside the lock — tear down old backend
+	// I/O outside the lock — cleanup closure already closes the sqlite store
 	if cleanup != nil {
 		cleanup()
-	}
-	if sqliteStore != nil {
-		if err := sqliteStore.Close(); err != nil {
-			m.log.Error("failed to close database during restart", zap.Error(err))
-		}
 	}
 
 	// Swap S3 handler to 503 placeholder during restart
@@ -223,6 +217,9 @@ func (m *Manager) Restart(ctx context.Context) error {
 
 	newSqliteStore, err := m.factory.OpenDatabase(s3Cfg.Directory + "/s3d.db")
 	if err != nil {
+		m.mu.Lock()
+		m.initError = userFriendlyInitError(err)
+		m.mu.Unlock()
 		return fmt.Errorf("failed to restart backend: failed to open database: %w", err)
 	}
 
@@ -231,6 +228,9 @@ func (m *Manager) Restart(ctx context.Context) error {
 		if closeErr := newSqliteStore.Close(); closeErr != nil {
 			m.log.Error("failed to close database after restart init error", zap.Error(closeErr))
 		}
+		m.mu.Lock()
+		m.initError = userFriendlyInitError(err)
+		m.mu.Unlock()
 		return fmt.Errorf("failed to restart backend: %w", err)
 	}
 
@@ -239,6 +239,7 @@ func (m *Manager) Restart(ctx context.Context) error {
 	m.backend = backend
 	m.sqliteStore = newSqliteStore
 	m.cleanup = newCleanup
+	m.initError = "" // clear any stale error from a previous failed init
 	m.mu.Unlock()
 
 	m.s3.Swap(s3Handler)
