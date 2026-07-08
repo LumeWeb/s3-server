@@ -242,10 +242,10 @@ func (b *Broker) publishStatus(version string) {
 		Version:    version,
 		Uptime:     time.Since(b.startedAt).Truncate(time.Second).String(),
 	}
-	if b.initError != nil {
-		b.mu.RLock()
-		initErrFn := b.initError
-		b.mu.RUnlock()
+	b.mu.RLock()
+	initErrFn := b.initError
+	b.mu.RUnlock()
+	if initErrFn != nil {
 		evt.InitError = initErrFn()
 	}
 	if err := b.PublishDashboard(evt); err != nil {
