@@ -171,7 +171,14 @@ func Save(path string, cfg PanelConfig) error {
 		return fmt.Errorf("failed to encode config: %w", err)
 	}
 
-	return os.WriteFile(path, data, 0600)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0600); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmp, 0600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 func BuildLogger(cfg LogConfig) (*zap.Logger, error) {
