@@ -8,6 +8,7 @@ import (
 	"github.com/SiaFoundation/s3d/s3"
 	"github.com/SiaFoundation/s3d/s3/s3errs"
 	"github.com/labstack/echo/v5"
+	"github.com/samber/lo"
 	"go.lumeweb.com/s3-server/internal/api"
 )
 
@@ -28,40 +29,40 @@ type LifecycleConfigJSON struct {
 }
 
 func (lc LifecycleConfigJSON) toS3() s3.LifecycleConfiguration {
-	rules := make([]s3.LifecycleRule, 0, len(lc.Rules))
-	for _, r := range lc.Rules {
-		rule := s3.LifecycleRule{
-			ID:     r.ID,
-			Status: r.Status,
-		}
-		if r.Prefix != "" {
-			p := r.Prefix
-			rule.Filter = &s3.LifecycleFilter{Prefix: &p}
-		} else {
-			rule.Filter = &s3.LifecycleFilter{}
-		}
-		if r.ExpirationDays > 0 {
-			rule.Expiration = &s3.LifecycleExpiration{Days: r.ExpirationDays}
-		}
-		rules = append(rules, rule)
+	return s3.LifecycleConfiguration{
+		Rules: lo.Map(lc.Rules, func(r LifecycleRuleJSON, _ int) s3.LifecycleRule {
+			rule := s3.LifecycleRule{
+				ID:     r.ID,
+				Status: r.Status,
+			}
+			if r.Prefix != "" {
+				p := r.Prefix
+				rule.Filter = &s3.LifecycleFilter{Prefix: &p}
+			} else {
+				rule.Filter = &s3.LifecycleFilter{}
+			}
+			if r.ExpirationDays > 0 {
+				rule.Expiration = &s3.LifecycleExpiration{Days: r.ExpirationDays}
+			}
+			return rule
+		}),
 	}
-	return s3.LifecycleConfiguration{Rules: rules}
 }
 
 func lifecycleConfigToJSON(cfg s3.LifecycleConfiguration) LifecycleConfigJSON {
-	rules := make([]LifecycleRuleJSON, 0, len(cfg.Rules))
-	for _, r := range cfg.Rules {
-		jr := LifecycleRuleJSON{
-			ID:     r.ID,
-			Status: r.Status,
-		}
-		jr.Prefix = r.EffectivePrefix()
-		if r.Expiration != nil {
-			jr.ExpirationDays = r.Expiration.Days
-		}
-		rules = append(rules, jr)
+	return LifecycleConfigJSON{
+		Rules: lo.Map(cfg.Rules, func(r s3.LifecycleRule, _ int) LifecycleRuleJSON {
+			jr := LifecycleRuleJSON{
+				ID:     r.ID,
+				Status: r.Status,
+			}
+			jr.Prefix = r.EffectivePrefix()
+			if r.Expiration != nil {
+				jr.ExpirationDays = r.Expiration.Days
+			}
+			return jr
+		}),
 	}
-	return LifecycleConfigJSON{Rules: rules}
 }
 
 func (s *Services) listBuckets(c *echo.Context) error {
@@ -73,12 +74,13 @@ func (s *Services) listBuckets(c *echo.Context) error {
 	if err != nil {
 		return api.SendInternal(c, api.TypeBucketListFailed, "failed to list buckets", err)
 	}
-	resp := ListBucketsResponse{Buckets: make([]BucketResponse, len(buckets))}
-	for i, bucket := range buckets {
-		resp.Buckets[i] = BucketResponse{
-			Name:      bucket.Name,
-			CreatedAt: bucket.CreationDate.Time,
-		}
+	resp := ListBucketsResponse{
+		Buckets: lo.Map(buckets, func(bucket s3.BucketInfo, _ int) BucketResponse {
+			return BucketResponse{
+				Name:      bucket.Name,
+				CreatedAt: bucket.CreationDate.Time,
+			}
+		}),
 	}
 	return c.JSON(http.StatusOK, resp)
 }

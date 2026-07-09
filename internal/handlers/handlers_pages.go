@@ -12,6 +12,7 @@ import (
 
 	"github.com/SiaFoundation/s3d/s3"
 	"github.com/labstack/echo/v5"
+	"github.com/samber/lo"
 	"go.lumeweb.com/s3-server/internal/api"
 	"go.lumeweb.com/s3-server/internal/backend"
 	"go.lumeweb.com/s3-server/internal/build"
@@ -114,21 +115,20 @@ func (s *Services) backupsPage(c *echo.Context) error {
 		return api.SendInternal(c, api.TypeBackupListFailed, "failed to list backups", err)
 	}
 
-	viewBackups := make([]views.BackupInfo, 0, len(entries))
-	for _, entry := range entries {
+	viewBackups := lo.FilterMap(entries, func(entry os.DirEntry, _ int) (views.BackupInfo, bool) {
 		if entry.IsDir() {
-			continue
+			return views.BackupInfo{}, false
 		}
 		info, err := entry.Info()
 		if err != nil {
-			continue
+			return views.BackupInfo{}, false
 		}
-		viewBackups = append(viewBackups, views.BackupInfo{
+		return views.BackupInfo{
 			Filename:  info.Name(),
-			Size:      info.Size(),
+			Size:       info.Size(),
 			CreatedAt: formatPanelTime(info.ModTime()),
-		})
-	}
+		}, true
+	})
 
 	sort.Slice(viewBackups, func(i, j int) bool {
 		return viewBackups[i].CreatedAt > viewBackups[j].CreatedAt

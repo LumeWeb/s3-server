@@ -8,6 +8,7 @@ import (
 	"github.com/SiaFoundation/s3d/s3"
 	s3dSia "github.com/SiaFoundation/s3d/sia"
 	"github.com/SiaFoundation/s3d/sia/persist/sqlite"
+	"github.com/samber/lo"
 	"go.lumeweb.com/s3-server/internal/config"
 	sdk "go.sia.tech/siastorage"
 	"go.sia.tech/core/types"
@@ -174,15 +175,13 @@ func (a *sqliteStoreAdapter) ListAccessKeys(userName *string) ([]AccessKeyInfo, 
 	if err != nil {
 		return nil, err
 	}
-	out := make([]AccessKeyInfo, len(keys))
-	for i, k := range keys {
-		out[i] = AccessKeyInfo{
+	return lo.Map(keys, func(k s3dSia.AccessKeyInfo, _ int) AccessKeyInfo {
+		return AccessKeyInfo{
 			AccessKeyID: k.AccessKeyID,
 			SecretKey:   k.SecretKey,
 			UserName:    k.UserName,
 		}
-	}
-	return out, nil
+	}), nil
 }
 
 func (a *sqliteStoreAdapter) Close() error {
