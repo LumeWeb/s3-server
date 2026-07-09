@@ -29,7 +29,6 @@ templ MonitoringContent(stats UploadStats, csrfToken string) {
 					</a>
 				</div>
 			</div>
-
 			<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
 				@StatCard("Pending Objects", "pending_objects", fmt.Sprintf("%d", stats.PendingObjects))
 				@StatCard("Pending Size", "pending_size", humanBytes(stats.PendingSize))
@@ -40,21 +39,18 @@ templ MonitoringContent(stats UploadStats, csrfToken string) {
 				@StatCard("Multipart Uploads", "multipart_uploads", fmt.Sprintf("%d", stats.MultipartUploads))
 				@StatCard("Unpinned Objects", "unpinned_objects", fmt.Sprintf("%d", stats.UnpinnedObjects))
 			</div>
-
 			<div class="card p-4" x-show="error" x-cloak>
 				<div class="flex items-center gap-2">
 					<svg class="h-5 w-5 text-destructive" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-						<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/>
+						<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"></path>
 					</svg>
 					<span class="text-sm text-destructive font-body" x-text="error"></span>
 				</div>
 			</div>
-
 			<div class="card p-4" x-show="!error && !lastRefresh" x-cloak>
 				<p class="text-sm text-muted-foreground font-body">Loading latest stats…</p>
 			</div>
 		</div>
-		
 	</div>
 }
 

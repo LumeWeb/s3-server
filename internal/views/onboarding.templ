@@ -8,7 +8,6 @@ templ OnboardingContent(csrfToken string, publicKey string) {
 	<div class="flex items-center justify-center min-h-screen" x-data="onboardingWizard" x-cloak data-onboarding>
 		<div class="card w-full max-w-lg p-8">
 			@LogoTitle("S3 Setup", true)
-
 			<!-- Step indicators -->
 			<div class="flex items-center justify-center mb-8">
 				<template x-for="(step, i) in steps" :key="i">
@@ -22,7 +21,6 @@ templ OnboardingContent(csrfToken string, publicKey string) {
 					</div>
 				</template>
 			</div>
-
 			<!-- Step 0: Admin Password -->
 			<div x-show="currentStep === 0">
 				<h2 class="step-heading">Set Admin Password</h2>
@@ -32,8 +30,8 @@ templ OnboardingContent(csrfToken string, publicKey string) {
 						<div class="relative">
 							<input :type="showPw ? 'text' : 'password'" id="admin-password" x-model="adminPassword" required minlength="8" autocomplete="new-password" class="form-input pr-10" placeholder="Admin password"/>
 							<button type="button" @click="showPw = !showPw" class="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-primary transition-colors" :aria-label="showPw ? 'Hide password' : 'Show password'">
-								<svg x-show="!showPw" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
-								<svg x-show="showPw" x-cloak xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></svg>
+								<svg x-show="!showPw" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+								<svg x-show="showPw" x-cloak xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"></path><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"></path><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"></path><line x1="2" y1="2" x2="22" y2="22"></line></svg>
 							</button>
 						</div>
 					}
@@ -41,18 +39,17 @@ templ OnboardingContent(csrfToken string, publicKey string) {
 						<div class="relative">
 							<input :type="showPw ? 'text' : 'password'" id="admin-password-confirm" x-model="adminPasswordConfirm" required minlength="8" autocomplete="new-password" class="form-input pr-10" placeholder="Confirm password"/>
 							<button type="button" @click="showPw = !showPw" class="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-primary transition-colors" :aria-label="showPw ? 'Hide password' : 'Show password'">
-								<svg x-show="!showPw" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
-								<svg x-show="showPw" x-cloak xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></svg>
+								<svg x-show="!showPw" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+								<svg x-show="showPw" x-cloak xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"></path><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"></path><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"></path><line x1="2" y1="2" x2="22" y2="22"></line></svg>
 							</button>
 						</div>
 					}
 					<button type="submit" :disabled={ "loading || adminPassword !== adminPasswordConfirm || adminPassword.length < 8" } class="btn-full">
-							<span x-show="!loading">Continue</span>
-							<span x-show="loading" aria-live="polite">Processing...</span>
-						</button>
-					</form>
-				</div>
-
+						<span x-show="!loading">Continue</span>
+						<span x-show="loading" aria-live="polite">Processing...</span>
+					</button>
+				</form>
+			</div>
 			<!-- Step 1: Sia Connection -->
 			<div x-show="currentStep === 1">
 				<!-- 1a: Connect form -->
@@ -75,12 +72,11 @@ templ OnboardingContent(csrfToken string, publicKey string) {
 						</div>
 					</div>
 					<button type="button" @click="connectToSia()" :disabled="loading" class="btn-full">
-							<span x-show="!loading">Connect to Sia</span>
-							<span x-show="loading" aria-live="polite">Connecting...</span>
-						</button>
-					</div>
-
-					<!-- 1b: Waiting for approval -->
+						<span x-show="!loading">Connect to Sia</span>
+						<span x-show="loading" aria-live="polite">Connecting...</span>
+					</button>
+				</div>
+				<!-- 1b: Waiting for approval -->
 				<div x-show="siaStep === 'waiting'">
 					<h2 class="step-heading">Approve Connection</h2>
 					<p class="step-desc">A new window has opened for you to approve this application on the Sia portal. Waiting for approval.</p>
@@ -88,41 +84,39 @@ templ OnboardingContent(csrfToken string, publicKey string) {
 						@Spinner()
 						<span class="font-body">Waiting for approval...</span>
 					</div>
-					</div>
-
+				</div>
 				<!-- 1c: Recovery Key -->
-					<div x-show="siaStep === 'recovery'">
-						<h2 class="step-heading">Back up your Recovery Key</h2>
-						<p class="step-desc">This Recovery Key is the only way to recover access to your account if this server is lost or reinstalled. We only handle messaging between people — we do not have access to your Recovery Key and cannot recover it for you.</p>
-						<div class="bg-card rounded-lg p-5 mb-5 border border-border">
-							<div class="grid grid-cols-3 gap-x-4 gap-y-3 font-display text-sm">
-								<template x-for="(word, i) in recoveryPhrase.split(' ')" :key="i">
-									<div class="flex items-center py-1">
-										<span class="text-muted-foreground text-xs tabular-nums select-none w-6 shrink-0" x-text="String(i+1).padStart(2, '0') + '.'"></span>
-										<span class="text-foreground ml-2" x-text="word"></span>
-									</div>
-								</template>
-							</div>
+				<div x-show="siaStep === 'recovery'">
+					<h2 class="step-heading">Back up your Recovery Key</h2>
+					<p class="step-desc">This Recovery Key is the only way to recover access to your account if this server is lost or reinstalled. We only handle messaging between people — we do not have access to your Recovery Key and cannot recover it for you.</p>
+					<div class="bg-card rounded-lg p-5 mb-5 border border-border">
+						<div class="grid grid-cols-3 gap-x-4 gap-y-3 font-display text-sm">
+							<template x-for="(word, i) in recoveryPhrase.split(' ')" :key="i">
+								<div class="flex items-center py-1">
+									<span class="text-muted-foreground text-xs tabular-nums select-none w-6 shrink-0" x-text="String(i+1).padStart(2, '0') + '.'"></span>
+									<span class="text-foreground ml-2" x-text="word"></span>
+								</div>
+							</template>
 						</div>
-						<div class="flex items-center gap-2 mb-5">
-							<button
-								type="button"
-								class="btn-secondary text-sm px-3 py-1.5"
-								@click="navigator.clipboard.writeText(recoveryPhrase).then(() => $dispatch('copied-key'))"
-							>Copy Recovery Key</button>
-							<span class="text-xs text-muted-foreground font-body" x-show="phraseCopied" x-cloak>Copied to clipboard</span>
-						</div>
-						@Toggle("phraseSaved", "I have saved my Recovery Key")
-						<div class="flex items-center gap-2 mt-6">
-							<button type="button" @click="phraseSaved && (showConfirmKey = true)" :disabled="!phraseSaved" class="btn-full">
-										<span x-show="!loading">Continue</span>
-										<span x-show="loading" aria-live="polite">Processing...</span>
-									</button>
-						</div>
-						@Dialog("showConfirmKey", "Confirm your Recovery Key", "Make sure you've written down all 12 words in the correct order before continuing. You won't be able to see them again.", "I've saved it", "btn-primary")
 					</div>
+					<div class="flex items-center gap-2 mb-5">
+						<button
+							type="button"
+							class="btn-secondary text-sm px-3 py-1.5"
+							@click="navigator.clipboard.writeText(recoveryPhrase).then(() => $dispatch('copied-key'))"
+						>Copy Recovery Key</button>
+						<span class="text-xs text-muted-foreground font-body" x-show="phraseCopied" x-cloak>Copied to clipboard</span>
 					</div>
-
+					@Toggle("phraseSaved", "I have saved my Recovery Key")
+					<div class="flex items-center gap-2 mt-6">
+						<button type="button" @click="phraseSaved && (showConfirmKey = true)" :disabled="!phraseSaved" class="btn-full">
+							<span x-show="!loading">Continue</span>
+							<span x-show="loading" aria-live="polite">Processing...</span>
+						</button>
+					</div>
+					@Dialog("showConfirmKey", "Confirm your Recovery Key", "Make sure you've written down all 12 words in the correct order before continuing. You won't be able to see them again.", "I've saved it", "btn-primary")
+				</div>
+			</div>
 			<!-- Step 2: Finish Setup -->
 			<div x-show="currentStep === 2">
 				<template x-if="!generatedCredentials.accessKey">
@@ -130,9 +124,9 @@ templ OnboardingContent(csrfToken string, publicKey string) {
 						<h2 class="step-heading">Finish Setup</h2>
 						<p class="step-desc">Your admin password is set. Click below to generate your S3 access key and secret key to finish setup.</p>
 						<button @click="finishSetup()" :disabled="loading" class="btn-full">
-								<span x-show="!loading">Generate S3 Keys & Finish</span>
-								<span x-show="loading" aria-live="polite">Processing...</span>
-							</button>
+							<span x-show="!loading">Generate S3 Keys & Finish</span>
+							<span x-show="loading" aria-live="polite">Processing...</span>
+						</button>
 					</div>
 				</template>
 				<template x-if="generatedCredentials.accessKey">
@@ -161,8 +155,8 @@ templ OnboardingContent(csrfToken string, publicKey string) {
 										<code id="cred-secret-key" x-text="showSecretKey ? generatedCredentials.secretKey : '••••••••••••••••••••••••'" class="flex-1 text-sm break-all text-foreground"></code>
 										<div class="flex items-center gap-3 shrink-0">
 											<button type="button" @click="showSecretKey = !showSecretKey" class="btn-link" :aria-label="showSecretKey ? 'Hide secret key' : 'Show secret key'">
-												<svg x-show="!showSecretKey" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
-												<svg x-show="showSecretKey" x-cloak xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></svg>
+												<svg x-show="!showSecretKey" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+												<svg x-show="showSecretKey" x-cloak xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"></path><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"></path><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"></path><line x1="2" y1="2" x2="22" y2="22"></line></svg>
 											</button>
 											<button type="button" @click="copyToClipboard(generatedCredentials.secretKey, 'secretKey')" class="btn-link" aria-label="Copy secret key to clipboard">
 												<span x-show="copiedField !== 'secretKey'">Copy</span>
@@ -178,30 +172,27 @@ templ OnboardingContent(csrfToken string, publicKey string) {
 						</button>
 					</div>
 				</template>
+			</div>
+			<!-- Reset onboarding — start over -->
+			<div class="mt-6 text-center" x-show="currentStep > 0" x-cloak>
+				<button
+					type="button"
+					class="btn-danger text-sm px-4 py-2 inline-flex items-center gap-1.5"
+					@click="if (confirm('Start over? This will reset your admin password and clear your onboarding progress.')) resetOnboarding()"
+				>
+					<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>
+					Start over
+				</button>
+			</div>
 		</div>
-
-		<!-- Reset onboarding — start over -->
-		<div class="mt-6 text-center" x-show="currentStep > 0" x-cloak>
-			<button
-				type="button"
-				class="btn-danger text-sm px-4 py-2 inline-flex items-center gap-1.5"
-				@click="if (confirm('Start over? This will reset your admin password and clear your onboarding progress.')) resetOnboarding()"
-			>
-				<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
-				Start over
-			</button>
-		</div>
-	</div>
-
-	<!-- Pre-define __siaReady as a pending promise so inline scripts can
+		<!-- Pre-define __siaReady as a pending promise so inline scripts can
 	     await it before the deferred module bundle finishes loading. -->
-	<script>
+		<script>
 		window.__siaReady = new Promise((resolve, reject) => {
 			window.__siaReadyResolve = resolve;
 			window.__siaReadyReject = reject;
 		});
 	</script>
-
-	<!-- sodium + sia SDK + ky bundled by Vite (see web/src/onboarding.ts) -->
-</div>
+		<!-- sodium + sia SDK + ky bundled by Vite (see web/src/onboarding.ts) -->
+	</div>
 }

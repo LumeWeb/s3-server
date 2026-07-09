@@ -246,7 +246,7 @@ func TestLoad_StatError_PropagatesNonNotExist(t *testing.T) {
 	// Make the directory unreadable (stat will fail with permission error)
 	err = os.Chmod(dir, 0000)
 	require.NoError(t, err)
-	defer os.Chmod(dir, 0700) // restore so cleanup works
+	defer func() { _ = os.Chmod(dir, 0700) }() // restore so cleanup works
 
 	_, err = Load(path)
 	require.Error(t, err)
@@ -290,7 +290,7 @@ func TestSave_AtomicWrite_OriginalIntactOnFailure(t *testing.T) {
 
 	// Make the directory read-only so the temp file write fails
 	require.NoError(t, os.Chmod(dir, 0500))
-	defer os.Chmod(dir, 0700) // restore for cleanup
+	defer func() { _ = os.Chmod(dir, 0700) }() // restore for cleanup
 
 	// Attempt to save — should fail because the temp file can't be written
 	err = Save(path, DefaultConfig())

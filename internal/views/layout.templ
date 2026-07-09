@@ -34,7 +34,7 @@ templ Base(title string, content templ.Component) {
 						</div>
 						<div class="flex items-center justify-center mb-4">
 							<svg class="h-12 w-12 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-								<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/>
+								<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"></path>
 							</svg>
 						</div>
 						<h2 class="step-heading">JavaScript Required</h2>
@@ -74,86 +74,86 @@ templ Base(title string, content templ.Component) {
 					</template>
 					<template x-if="!processing && type !== 'error'">
 						<svg class="h-5 w-5 text-primary shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-							<path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+							<path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
 						</svg>
 					</template>
 					<template x-if="!processing && type === 'error'">
 						<svg class="h-5 w-5 text-destructive shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-							<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/>
+							<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"></path>
 						</svg>
 					</template>
 					<span class="text-sm text-foreground font-body" x-text="msg"></span>
 				</div>
 			</div>
 			<!-- Global confirm dialog (replaces native hx-confirm) -->
-		<div
-		id="confirm-dialog"
-		class="fixed inset-0 z-[80] flex items-center justify-center bg-black/50"
-		x-data="{ show: false, title: 'Confirm', message: '', detail: '', variant: 'warning', resolve: null }"
-		x-show="show"
-		x-cloak
-		role="dialog"
-		aria-modal="true"
-		aria-labelledby="confirm-dialog-title"
-		@click.self="if (resolve) { resolve(false); show = false }"
-		x-transition.opacity
-		@keydown.escape.window="if (show && resolve) { resolve(false); show = false }"
-		>
-		<div class="card w-full max-w-md p-6 shadow-xl">
-			<div class="flex items-start gap-4">
-				<div class="flex-shrink-0 mt-0.5">
-					<svg x-show="variant === 'danger'" class="h-7 w-7 text-destructive" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-						<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.75 1.5c0 1.164.5 2.25 1.5 3 1.5 1 3.5 1 5.25 1.5 1.75.5 3.75.5 5.25 0 1.5-.5 3.75-.5 5.25-1.5 1-.75 1.5-1.836 1.5-3 0-1.164-.5-2.25-1.5-3-1.5-1-3.5-1-5.25-1.5-1.75-.5-3.75-.5-5.25 0-1.5.5-3.75.5-5.25 1.5-1 .75-1.5 1.836-1.5 3z"/>
-					</svg>
-					<svg x-show="variant === 'info'" class="h-7 w-7 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-						<path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"/>
-					</svg>
-					<svg x-show="variant !== 'danger' && variant !== 'info'" class="h-7 w-7 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-						<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.75 1.5c0 1.164.5 2.25 1.5 3 1.5 1 3.5 1 5.25 1.5 1.75.5 3.75.5 5.25 0 1.5-.5 3.75-.5 5.25-1.5 1-.75 1.5-1.836 1.5-3 0-1.164-.5-2.25-1.5-3-1.5-1-3.5-1-5.25-1.5-1.75-.5-3.75-.5-5.25 0-1.5.5-3.75.5-5.25 1.5-1 .75-1.5 1.836-1.5 3z"/>
-					</svg>
-				</div>
-				<div class="flex-1 min-w-0">
-					<h3 id="confirm-dialog-title" class="text-lg font-bold text-foreground font-display" x-text="title || 'Confirm'"></h3>
-					<p class="mt-2 text-sm text-muted-foreground font-body break-words" x-text="message"></p>
-					<template x-if="detail">
-						<p class="mt-1 text-xs text-muted-foreground font-body" x-text="detail"></p>
-					</template>
-				</div>
-			</div>
-			<div class="mt-6 flex justify-end gap-2">
-				<button
-					type="button"
-					class="btn-ghost px-4 py-2 text-sm"
-					@click="if (resolve) { resolve(false) }; show = false"
-				>Cancel</button>
-				<button
-					type="button"
-					:class="variant === 'danger' ? 'btn-danger' : 'btn-primary'"
-						class="px-4 py-2 text-sm"
-						@click="if (resolve) { resolve(true) }; show = false"
-						x-text="variant === 'danger' ? 'Delete' : 'Confirm'"
-					></button>
-			</div>
-		</div>
-	</div>
-		<!-- Critical error dialog (INTERNAL_ERROR, NOT_READY, etc.) -->
 			<div
-					id="error-dialog"
-					class="fixed inset-0 z-[80] flex items-center justify-center bg-black/50"
-					x-data="{ show: false, title: '', message: '', detail: '' }"
-					x-show="show"
-					x-cloak
-					role="dialog"
-					aria-modal="true"
-					aria-labelledby="error-dialog-title"
-					@click.self="show = false"
-					x-transition.opacity
-				>
+				id="confirm-dialog"
+				class="fixed inset-0 z-[80] flex items-center justify-center bg-black/50"
+				x-data="{ show: false, title: 'Confirm', message: '', detail: '', variant: 'warning', resolve: null }"
+				x-show="show"
+				x-cloak
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby="confirm-dialog-title"
+				@click.self="if (resolve) { resolve(false); show = false }"
+				x-transition.opacity
+				@keydown.escape.window="if (show && resolve) { resolve(false); show = false }"
+			>
+				<div class="card w-full max-w-md p-6 shadow-xl">
+					<div class="flex items-start gap-4">
+						<div class="flex-shrink-0 mt-0.5">
+							<svg x-show="variant === 'danger'" class="h-7 w-7 text-destructive" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+								<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.75 1.5c0 1.164.5 2.25 1.5 3 1.5 1 3.5 1 5.25 1.5 1.75.5 3.75.5 5.25 0 1.5-.5 3.75-.5 5.25-1.5 1-.75 1.5-1.836 1.5-3 0-1.164-.5-2.25-1.5-3-1.5-1-3.5-1-5.25-1.5-1.75-.5-3.75-.5-5.25 0-1.5.5-3.75.5-5.25 1.5-1 .75-1.5 1.836-1.5 3z"></path>
+							</svg>
+							<svg x-show="variant === 'info'" class="h-7 w-7 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+								<path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"></path>
+							</svg>
+							<svg x-show="variant !== 'danger' && variant !== 'info'" class="h-7 w-7 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+								<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.75 1.5c0 1.164.5 2.25 1.5 3 1.5 1 3.5 1 5.25 1.5 1.75.5 3.75.5 5.25 0 1.5-.5 3.75-.5 5.25-1.5 1-.75 1.5-1.836 1.5-3 0-1.164-.5-2.25-1.5-3-1.5-1-3.5-1-5.25-1.5-1.75-.5-3.75-.5-5.25 0-1.5.5-3.75.5-5.25 1.5-1 .75-1.5 1.836-1.5 3z"></path>
+							</svg>
+						</div>
+						<div class="flex-1 min-w-0">
+							<h3 id="confirm-dialog-title" class="text-lg font-bold text-foreground font-display" x-text="title || 'Confirm'"></h3>
+							<p class="mt-2 text-sm text-muted-foreground font-body break-words" x-text="message"></p>
+							<template x-if="detail">
+								<p class="mt-1 text-xs text-muted-foreground font-body" x-text="detail"></p>
+							</template>
+						</div>
+					</div>
+					<div class="mt-6 flex justify-end gap-2">
+						<button
+							type="button"
+							class="btn-ghost px-4 py-2 text-sm"
+							@click="if (resolve) { resolve(false) }; show = false"
+						>Cancel</button>
+						<button
+							type="button"
+							:class="variant === 'danger' ? 'btn-danger' : 'btn-primary'"
+							class="px-4 py-2 text-sm"
+							@click="if (resolve) { resolve(true) }; show = false"
+							x-text="variant === 'danger' ? 'Delete' : 'Confirm'"
+						></button>
+					</div>
+				</div>
+			</div>
+			<!-- Critical error dialog (INTERNAL_ERROR, NOT_READY, etc.) -->
+			<div
+				id="error-dialog"
+				class="fixed inset-0 z-[80] flex items-center justify-center bg-black/50"
+				x-data="{ show: false, title: '', message: '', detail: '' }"
+				x-show="show"
+				x-cloak
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby="error-dialog-title"
+				@click.self="show = false"
+				x-transition.opacity
+			>
 				<div class="card w-full max-w-md p-6 shadow-xl">
 					<div class="flex items-start gap-4">
 						<div class="flex-shrink-0 mt-0.5">
 							<svg class="h-7 w-7 text-destructive" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-								<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.75 1.5c0 1.164.5 2.25 1.5 3 1.5 1 3.5 1 5.25 1.5 1.75.5 3.75.5 5.25 0 1.5-.5 3.75-.5 5.25-1.5 1-.75 1.5-1.836 1.5-3 0-1.164-.5-2.25-1.5-3-1.5-1-3.5-1-5.25-1.5-1.75-.5-3.75-.5-5.25 0-1.5.5-3.75.5-5.25 1.5-1 .75-1.5 1.836-1.5 3z"/>
+								<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.75 1.5c0 1.164.5 2.25 1.5 3 1.5 1 3.5 1 5.25 1.5 1.75.5 3.75.5 5.25 0 1.5-.5 3.75-.5 5.25-1.5 1-.75 1.5-1.836 1.5-3 0-1.164-.5-2.25-1.5-3-1.5-1-3.5-1-5.25-1.5-1.75-.5-3.75-.5-5.25 0-1.5.5-3.75.5-5.25 1.5-1 .75-1.5 1.836-1.5 3z"></path>
 							</svg>
 						</div>
 						<div class="flex-1 min-w-0">
@@ -173,7 +173,7 @@ templ Base(title string, content templ.Component) {
 					</div>
 				</div>
 			</div>
-	</body>
+		</body>
 	</html>
 }
 
@@ -214,12 +214,13 @@ templ Nav(activePage string, version string, csrfToken string) {
 }
 
 templ navLink(id string, activePage string, href string, label string) {
-	{{ cls := "text-sm transition-colors font-body px-2 py-1 rounded "
-	   if activePage == id {
-	     cls += "text-primary font-bold"
-	   } else {
-	     cls += "text-muted-foreground hover:text-primary"
-	   }
+	{{
+		cls := "text-sm transition-colors font-body px-2 py-1 rounded "
+		if activePage == id {
+			cls += "text-primary font-bold"
+		} else {
+			cls += "text-muted-foreground hover:text-primary"
+		}
 	}}
 	<a href={ templ.SafeURL(href) } class={ cls }>{ label }</a>
 }

@@ -7,7 +7,6 @@ templ Dashboard(version string, groups []UserKeyGroup, csrfToken string) {
 templ DashboardContent(version string, groups []UserKeyGroup, csrfToken string) {
 	<div class="min-h-screen" x-data="dashboardApp" x-cloak>
 		@Nav("dashboard", version, csrfToken)
-
 		<div class="max-w-5xl mx-auto px-4 py-6 space-y-6">
 			<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
 				<div class="stat-card">
@@ -29,7 +28,6 @@ templ DashboardContent(version string, groups []UserKeyGroup, csrfToken string) 
 					<div class="text-xl font-bold font-display mt-1 text-foreground" x-text="uptime"></div>
 				</div>
 			</div>
-
 			<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 				<div class="lg:col-span-2 card">
 					<div class="card-header flex items-center justify-between">
@@ -48,11 +46,10 @@ templ DashboardContent(version string, groups []UserKeyGroup, csrfToken string) 
 						}
 					</div>
 					<div id="keys-list" class="divide-y divide-surface-border">
-							@KeyList(groups, len(groups) > 1, true)
-						</div>
+						@KeyList(groups, len(groups) > 1, true)
+					</div>
 					<div id="key-notification"></div>
 				</div>
-
 				<div class="card">
 					<div class="card-header">
 						<h2 class="font-bold font-display text-foreground">Quick Actions</h2>
@@ -67,8 +64,6 @@ templ DashboardContent(version string, groups []UserKeyGroup, csrfToken string) 
 				</div>
 			</div>
 		</div>
-
-		
 	</div>
 }
 
@@ -79,7 +74,7 @@ templ quickAction(label string, href string) {
 	>
 		<span class="text-sm text-muted-foreground font-body group-hover:text-primary transition-colors">{ label }</span>
 		<svg class="h-4 w-4 text-muted-foreground/60 group-hover:text-primary transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-			<path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5"/>
+			<path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5"></path>
 		</svg>
 	</a>
 }
