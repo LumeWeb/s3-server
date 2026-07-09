@@ -1,0 +1,12 @@
+{
+  "name": "s3-server",
+  "private": true,
+  "workspaces": ["web"],
+  "scripts": {
+    "build:css": "tailwindcss -i internal/views/css/input.css -o internal/views/css/tailwind.css --content \"internal/views/**/*.templ\" --minify"
+  },
+  "devDependencies": {
+    "tailwindcss": "^4",
+    "@tailwindcss/cli": "^4"
+  }
+}
