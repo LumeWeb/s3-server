@@ -1,0 +1,207 @@
+package views
+
+templ Onboarding(csrfToken string, publicKey string) {
+	@Base("Setup", OnboardingContent(csrfToken, publicKey))
+}
+
+templ OnboardingContent(csrfToken string, publicKey string) {
+	<div class="flex items-center justify-center min-h-screen" x-data="onboardingWizard" x-cloak data-onboarding>
+		<div class="card w-full max-w-lg p-8">
+			@LogoTitle("S3 Setup", true)
+
+			<!-- Step indicators -->
+			<div class="flex items-center justify-center mb-8">
+				<template x-for="(step, i) in steps" :key="i">
+					<div class="flex items-center">
+						<div
+							class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold font-display border-2 shrink-0"
+							:class="i <= currentStep ? 'bg-primary text-primary-foreground border-primary' : 'bg-secondary text-muted-foreground border-border'"
+							x-text="i + 1"
+						></div>
+						<div x-show="i < steps.length - 1" x-cloak class="w-10 h-0.5 shrink-0 rounded-full" :class="i < currentStep ? 'bg-primary' : 'bg-border'"></div>
+					</div>
+				</template>
+			</div>
+
+			<!-- Step 0: Admin Password -->
+			<div x-show="currentStep === 0">
+				<h2 class="step-heading">Set Admin Password</h2>
+				<p class="step-desc">This password protects the admin panel. Minimum 8 characters.</p>
+				<form @submit.prevent="setAdminPassword()" class="space-y-4">
+					@FormRow("Password", "admin-password", "") {
+						<div class="relative">
+							<input :type="showPw ? 'text' : 'password'" id="admin-password" x-model="adminPassword" required minlength="8" autocomplete="new-password" class="form-input pr-10" placeholder="Admin password"/>
+							<button type="button" @click="showPw = !showPw" class="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-primary transition-colors" :aria-label="showPw ? 'Hide password' : 'Show password'">
+								<svg x-show="!showPw" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+								<svg x-show="showPw" x-cloak xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></svg>
+							</button>
+						</div>
+					}
+					@FormRow("Confirm Password", "admin-password-confirm", "") {
+						<div class="relative">
+							<input :type="showPw ? 'text' : 'password'" id="admin-password-confirm" x-model="adminPasswordConfirm" required minlength="8" autocomplete="new-password" class="form-input pr-10" placeholder="Confirm password"/>
+							<button type="button" @click="showPw = !showPw" class="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-primary transition-colors" :aria-label="showPw ? 'Hide password' : 'Show password'">
+								<svg x-show="!showPw" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+								<svg x-show="showPw" x-cloak xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></svg>
+							</button>
+						</div>
+					}
+					<button type="submit" :disabled={ "loading || adminPassword !== adminPasswordConfirm || adminPassword.length < 8" } class="btn-full">
+							<span x-show="!loading">Continue</span>
+							<span x-show="loading" aria-live="polite">Processing...</span>
+						</button>
+					</form>
+				</div>
+
+			<!-- Step 1: Sia Connection -->
+			<div x-show="currentStep === 1">
+				<!-- 1a: Connect form -->
+				<div x-show="siaStep === 'connect'">
+					<h2 class="step-heading">Connect to Sia Network</h2>
+					<p class="step-desc">Connect your Sia account to this server. You'll be redirected to a managed Sia portal to approve the connection, then given a 12-word Recovery Key. Write it down; it's the only way to recover your account if you lose access. No one — including us — can regenerate it for you.</p>
+					<div class="space-y-4 mb-4">
+						@FormRow("Sia portal", "sia-indexer", "Select a managed Sia portal or provide a custom URL") {
+							<select id="sia-indexer" x-model="indexerSelection" aria-describedby="sia-indexer-hint" class="form-select">
+								<template x-for="(url, i) in siaConfig?.available_indexers || []" :key="i">
+									<option :value="url" x-text="url"></option>
+								</template>
+								<option value="__custom__">Custom</option>
+							</select>
+						}
+						<div x-show="indexerSelection === '__custom__'">
+							@FormRow("Custom Sia portal URL", "sia-custom-indexer", "https:// will be added automatically if omitted") {
+								<input type="text" id="sia-custom-indexer" x-model="customIndexer" class="form-input" placeholder="sia.example.com"/>
+							}
+						</div>
+					</div>
+					<button type="button" @click="connectToSia()" :disabled="loading" class="btn-full">
+							<span x-show="!loading">Connect to Sia</span>
+							<span x-show="loading" aria-live="polite">Connecting...</span>
+						</button>
+					</div>
+
+					<!-- 1b: Waiting for approval -->
+				<div x-show="siaStep === 'waiting'">
+					<h2 class="step-heading">Approve Connection</h2>
+					<p class="step-desc">A new window has opened for you to approve this application on the Sia portal. Waiting for approval.</p>
+					<div class="flex items-center justify-center space-x-2 text-muted-foreground" aria-live="polite" role="status">
+						@Spinner()
+						<span class="font-body">Waiting for approval...</span>
+					</div>
+					</div>
+
+				<!-- 1c: Recovery Key -->
+					<div x-show="siaStep === 'recovery'">
+						<h2 class="step-heading">Back up your Recovery Key</h2>
+						<p class="step-desc">This Recovery Key is the only way to recover access to your account if this server is lost or reinstalled. We only handle messaging between people — we do not have access to your Recovery Key and cannot recover it for you.</p>
+						<div class="bg-card rounded-lg p-5 mb-5 border border-border">
+							<div class="grid grid-cols-3 gap-x-4 gap-y-3 font-display text-sm">
+								<template x-for="(word, i) in recoveryPhrase.split(' ')" :key="i">
+									<div class="flex items-center py-1">
+										<span class="text-muted-foreground text-xs tabular-nums select-none w-6 shrink-0" x-text="String(i+1).padStart(2, '0') + '.'"></span>
+										<span class="text-foreground ml-2" x-text="word"></span>
+									</div>
+								</template>
+							</div>
+						</div>
+						<div class="flex items-center gap-2 mb-5">
+							<button
+								type="button"
+								class="btn-secondary text-sm px-3 py-1.5"
+								@click="navigator.clipboard.writeText(recoveryPhrase).then(() => $dispatch('copied-key'))"
+							>Copy Recovery Key</button>
+							<span class="text-xs text-muted-foreground font-body" x-show="phraseCopied" x-cloak>Copied to clipboard</span>
+						</div>
+						@Toggle("phraseSaved", "I have saved my Recovery Key")
+						<div class="flex items-center gap-2 mt-6">
+							<button type="button" @click="phraseSaved && (showConfirmKey = true)" :disabled="!phraseSaved" class="btn-full">
+										<span x-show="!loading">Continue</span>
+										<span x-show="loading" aria-live="polite">Processing...</span>
+									</button>
+						</div>
+						@Dialog("showConfirmKey", "Confirm your Recovery Key", "Make sure you've written down all 12 words in the correct order before continuing. You won't be able to see them again.", "I've saved it", "btn-primary")
+					</div>
+					</div>
+
+			<!-- Step 2: Finish Setup -->
+			<div x-show="currentStep === 2">
+				<template x-if="!generatedCredentials.accessKey">
+					<div class="space-y-4">
+						<h2 class="step-heading">Finish Setup</h2>
+						<p class="step-desc">Your admin password is set. Click below to generate your S3 access key and secret key to finish setup.</p>
+						<button @click="finishSetup()" :disabled="loading" class="btn-full">
+								<span x-show="!loading">Generate S3 Keys & Finish</span>
+								<span x-show="loading" aria-live="polite">Processing...</span>
+							</button>
+					</div>
+				</template>
+				<template x-if="generatedCredentials.accessKey">
+					<div class="space-y-4">
+						<h2 class="step-heading text-primary!">Setup Complete!</h2>
+						<p class="step-desc">Save these credentials — you'll need them to access your S3 storage.</p>
+						<div class="border border-border rounded-lg overflow-hidden">
+							<div class="card-header flex items-center justify-between">
+								<h3 class="font-bold font-display text-foreground">Admin Credentials</h3>
+								<button type="button" @click="copyAllCredentials()" class="btn-link" aria-label="Copy all credentials to clipboard">Copy All</button>
+							</div>
+							<div class="p-4 space-y-4">
+								<div>
+									<label for="cred-access-key" class="block text-sm font-medium text-foreground mb-1 font-body">Access Key</label>
+									<div class="flex items-center gap-2">
+										<code id="cred-access-key" x-text="generatedCredentials.accessKey" class="flex-1 text-sm break-all text-foreground"></code>
+										<button type="button" @click="copyToClipboard(generatedCredentials.accessKey)" class="btn-link shrink-0" aria-label="Copy access key to clipboard">
+											<span x-show="copiedField !== 'accessKey'">Copy</span>
+											<span x-show="copiedField === 'accessKey'" x-cloak>Copied!</span>
+										</button>
+									</div>
+								</div>
+								<div>
+									<label for="cred-secret-key" class="block text-sm font-medium text-foreground mb-1 font-body">Secret Key</label>
+									<div class="flex items-center gap-2">
+										<code id="cred-secret-key" x-text="showSecretKey ? generatedCredentials.secretKey : '••••••••••••••••••••••••'" class="flex-1 text-sm break-all text-foreground"></code>
+										<div class="flex items-center gap-3 shrink-0">
+											<button type="button" @click="showSecretKey = !showSecretKey" class="btn-link" :aria-label="showSecretKey ? 'Hide secret key' : 'Show secret key'">
+												<svg x-show="!showSecretKey" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+												<svg x-show="showSecretKey" x-cloak xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></svg>
+											</button>
+											<button type="button" @click="copyToClipboard(generatedCredentials.secretKey, 'secretKey')" class="btn-link" aria-label="Copy secret key to clipboard">
+												<span x-show="copiedField !== 'secretKey'">Copy</span>
+												<span x-show="copiedField === 'secretKey'" x-cloak>Copied!</span>
+											</button>
+										</div>
+									</div>
+								</div>
+							</div>
+						</div>
+						<button @click="goToDashboard()" class="btn-full">
+							Go to Dashboard
+						</button>
+					</div>
+				</template>
+		</div>
+
+		<!-- Reset onboarding — start over -->
+		<div class="mt-6 text-center" x-show="currentStep > 0" x-cloak>
+			<button
+				type="button"
+				class="btn-danger text-sm px-4 py-2 inline-flex items-center gap-1.5"
+				@click="if (confirm('Start over? This will reset your admin password and clear your onboarding progress.')) resetOnboarding()"
+			>
+				<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+				Start over
+			</button>
+		</div>
+	</div>
+
+	<!-- Pre-define __siaReady as a pending promise so inline scripts can
+	     await it before the deferred module bundle finishes loading. -->
+	<script>
+		window.__siaReady = new Promise((resolve, reject) => {
+			window.__siaReadyResolve = resolve;
+			window.__siaReadyReject = reject;
+		});
+	</script>
+
+	<!-- sodium + sia SDK + ky bundled by Vite (see web/src/onboarding.ts) -->
+</div>
+}

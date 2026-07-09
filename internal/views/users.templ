@@ -1,0 +1,131 @@
+package views
+
+import "fmt"
+
+func userInitial(name string) string {
+	if len(name) > 0 {
+		return string(name[0])
+	}
+	return "?"
+}
+
+templ Users(users []UserInfo, csrfToken string) {
+	@Base("Users", UsersContent(users, csrfToken))
+}
+
+templ UsersContent(users []UserInfo, csrfToken string) {
+	<div class="min-h-screen" x-data="{ showCreate: false, createName: '', createErr: '', creating: false, showDelete: false, deleteName: '' }" @dialog-confirm.window="if ($event.detail?.source === 'showDelete') { window.__sseAction('Deleting user…', () => window.__api.del('/_panel/api/users/' + encodeURIComponent(deleteName)), 'User deleted').then(() => setTimeout(() => window.location.reload(), 500)).catch(() => {}); }">
+		@Nav("users", "", csrfToken)
+		<div class="max-w-5xl mx-auto px-4 py-6 space-y-6">
+			<div class="card">
+				<div class="card-header flex items-center justify-between">
+					<div>
+						<h2 class="font-bold font-display text-foreground">Users</h2>
+						<p class="text-xs text-muted-foreground font-body mt-0.5">Identities that own access keys</p>
+					</div>
+					<button
+						type="button"
+						class="btn-primary text-sm px-3 py-1.5"
+						@click="showCreate = true"
+					>
+						+ Create User
+					</button>
+				</div>
+				<div id="users-list" class="divide-y divide-surface-border">
+					if len(users) == 0 {
+						@EmptyState("No users configured. Create one to generate access keys.", "Create User", "/_panel/users")
+					}
+					for _, u := range users {
+						@UserRow(u)
+					}
+				</div>
+			</div>
+		</div>
+		<template x-if="showCreate">
+			@CreateUserModal()
+		</template>
+		@Dialog("showDelete", "Delete User", "Delete this user and all associated access keys? This cannot be undone.", "Delete", "btn-danger")
+		</div>
+}
+
+templ UserRow(u UserInfo) {
+	<div class="px-4 py-3 flex items-center justify-between hover:bg-card/30 transition-colors" id={ "user-" + u.Name }>
+		<div class="flex items-center gap-3 flex-1 min-w-0">
+			<div class="h-8 w-8 rounded-full bg-border/50 flex items-center justify-center text-xs font-bold font-display text-muted-foreground">
+				{ userInitial(u.Name) }
+			</div>
+			<div class="min-w-0">
+				<div class="font-display text-sm text-foreground">{ u.Name }</div>
+				<div class="font-body text-xs text-muted-foreground">
+					{ countWord(u.KeyCount, "access key") }
+					if u.CreatedAt != "" {
+						<span class="ml-2">· created { u.CreatedAt }</span>
+					}
+				</div>
+			</div>
+		</div>
+		<div class="ml-4 flex items-center gap-1">
+			<a
+				href="/_panel/keys"
+				class="link-action"
+			>
+				Manage keys
+			</a>
+			if u.Name != "default" {
+				<button
+					type="button"
+					class="link-danger"
+					@click={ fmt.Sprintf("deleteName = '%s'; showDelete = true", jsEscape(u.Name)) }
+				>
+					Delete
+				</button>
+			}
+		</div>
+	</div>
+}
+
+templ CreateUserModal() {
+	<div
+		class="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
+		@click="if ($event.target === $event.currentTarget) showCreate = false"
+	>
+		<div class="card w-full max-w-md mx-4">
+			<div class="card-header flex items-center justify-between">
+				<h3 class="font-bold font-display text-foreground">Create User</h3>
+				<button type="button" class="modal-close" @click="showCreate = false">✕</button>
+			</div>
+			<form
+				@submit.prevent="
+					creating = true; createErr = '';
+					window.__sseAction('Creating user…', () => window.__api.post('/_panel/api/users', { name: createName }), 'User created')
+						.then(() => { showCreate = false; setTimeout(() => window.location.reload(), 500); })
+						.catch(e => { createErr = e.message; })
+						.finally(() => { creating = false; })
+				"
+				class="p-4 space-y-4"
+			>
+				<div>
+					<label class="form-label">User Name</label>
+					<input
+						type="text"
+						x-model="createName"
+						required
+						pattern="[a-z0-9]([a-z0-9-]{0,31})"
+						placeholder="ops-team"
+						class="form-input"
+						autocomplete="off"
+					/>
+					<p class="form-hint">Letters and numbers only, 1–32 characters, lowercase.</p>
+				</div>
+				<p x-show="createErr" x-cloak class="error-msg" x-text="createErr"></p>
+				<div class="flex justify-end gap-3 pt-2">
+					<button type="button" class="btn-ghost text-sm px-3 py-2" @click="showCreate = false">Cancel</button>
+					<button type="submit" class="btn-primary text-sm px-4 py-2" :disabled="creating">
+						<span x-show="!creating" x-cloak>Create</span>
+						<span x-show="creating" x-cloak class="flex items-center gap-1.5"><span class="spin"></span> Creating…</span>
+					</button>
+				</div>
+			</form>
+		</div>
+	</div>
+}

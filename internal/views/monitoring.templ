@@ -1,0 +1,66 @@
+package views
+
+import "fmt"
+
+templ Monitoring(stats UploadStats, csrfToken string) {
+	@Base("Monitoring", MonitoringContent(stats, csrfToken))
+}
+
+templ MonitoringContent(stats UploadStats, csrfToken string) {
+	<div class="min-h-screen" x-data="monitoringApp" x-init="init()">
+		@Nav("monitoring", "", csrfToken)
+		<div class="max-w-5xl mx-auto px-4 py-6 space-y-6">
+			<div class="flex items-center justify-between">
+				<div>
+					<h2 class="font-bold font-display text-foreground text-lg">Upload Pipeline</h2>
+					<p class="text-xs text-muted-foreground font-body mt-0.5">Real-time object upload statistics</p>
+				</div>
+				<div class="flex items-center gap-3">
+					<div class="flex items-center gap-1.5 text-xs text-muted-foreground font-body" x-show="!error" x-cloak>
+						<div class="h-1.5 w-1.5 rounded-full bg-primary animate-pulse"></div>
+						<span x-text="lastRefresh ? ('Updated ' + lastRefresh) : 'Loading…'"></span>
+					</div>
+					<a
+						href="/_panel/api/admin/prometheus"
+						target="_blank"
+						class="text-sm btn-ghost px-2 py-1"
+					>
+						Prometheus →
+					</a>
+				</div>
+			</div>
+
+			<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+				@StatCard("Pending Objects", "pending_objects", fmt.Sprintf("%d", stats.PendingObjects))
+				@StatCard("Pending Size", "pending_size", humanBytes(stats.PendingSize))
+				@StatCard("Uploaded Objects", "uploaded_objects", fmt.Sprintf("%d", stats.UploadedObjects))
+				@StatCard("Uploaded Size", "uploaded_size", humanBytes(stats.UploadedSize))
+				@StatCard("Failed Uploads", "failed_uploads", fmt.Sprintf("%d", stats.FailedUploads))
+				@StatCard("Orphaned Objects", "orphaned_objects", fmt.Sprintf("%d", stats.OrphanedObjects))
+				@StatCard("Multipart Uploads", "multipart_uploads", fmt.Sprintf("%d", stats.MultipartUploads))
+				@StatCard("Unpinned Objects", "unpinned_objects", fmt.Sprintf("%d", stats.UnpinnedObjects))
+			</div>
+
+			<div class="card p-4" x-show="error" x-cloak>
+				<div class="flex items-center gap-2">
+					<svg class="h-5 w-5 text-destructive" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+						<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/>
+					</svg>
+					<span class="text-sm text-destructive font-body" x-text="error"></span>
+				</div>
+			</div>
+
+			<div class="card p-4" x-show="!error && !lastRefresh" x-cloak>
+				<p class="text-sm text-muted-foreground font-body">Loading latest stats…</p>
+			</div>
+		</div>
+		
+	</div>
+}
+
+templ StatCard(label string, bindKey string, initial string) {
+	<div class="stat-card">
+		<div class="text-sm text-muted-foreground font-body">{ label }</div>
+		<div class="text-xl font-bold font-display mt-1 text-foreground" x-text={ bindKey }>{ initial }</div>
+	</div>
+}
