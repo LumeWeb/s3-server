@@ -52,7 +52,6 @@ const (
 	PanelBucketsAPI       = PanelPrefix + "/api/buckets"
 	PanelBucketLifecycle  = PanelPrefix + "/api/buckets/:name/lifecycle"
 	PanelBucketVersioning = PanelPrefix + "/api/buckets/:name/versioning"
-	PanelBucketFlush      = PanelPrefix + "/api/buckets/:name/flush"
 
 	PanelBackupsAPI    = PanelPrefix + "/api/backups"
 	PanelBackupFileAPI = PanelPrefix + "/api/backups/:filename"

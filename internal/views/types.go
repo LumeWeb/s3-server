@@ -2,6 +2,8 @@ package views
 
 import (
 	"fmt"
+	"strings"
+
 	"go.lumeweb.com/s3-server/internal/config"
 
 	p "github.com/rickb777/plural"
@@ -119,4 +121,13 @@ func jsEscape(s string) string {
 		}
 	}
 	return string(b)
+}
+
+// maskKey masks a secret key, showing only the last 4 characters.
+// Prevents credential exposure via browser cache, proxy cache, or logs.
+func maskKey(s string) string {
+	if len(s) <= 4 {
+		return strings.Repeat("*", len(s))
+	}
+	return strings.Repeat("*", len(s)-4) + s[len(s)-4:]
 }

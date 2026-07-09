@@ -8,8 +8,7 @@ templ Buckets(buckets []BucketInfo, csrfToken string) {
 
 templ BucketsContent(buckets []BucketInfo, csrfToken string) {
 	<div class="min-h-screen" x-data="bucketPage" @dialog-confirm.window="
-	if ($event.detail?.source === 'showFlush') { confirmFlush(); }
-	else if ($event.detail?.source === 'showVersioning') { confirmVersioning(); }
+	if ($event.detail?.source === 'showVersioning') { confirmVersioning(); }
 ">
 		@Nav("buckets", "", csrfToken)
 		<div class="max-w-5xl mx-auto px-4 py-6 space-y-6">
@@ -31,7 +30,6 @@ templ BucketsContent(buckets []BucketInfo, csrfToken string) {
 					<p><span class="font-medium text-foreground/70">Controls:</span></p>
 					<p><span class="font-medium text-foreground/60">Lifecycle</span> — set auto-expiry or transition rules.</p>
 					<p><span class="font-medium text-foreground/60">Versioning</span> — enable or suspend object versioning.</p>
-					<p><span class="font-medium text-foreground/60">Flush</span> — force-upload buffered objects to the network immediately.</p>
 				</div>
 				<div id="buckets-list" class="divide-y divide-surface-border">
 					if len(buckets) == 0 {
@@ -49,10 +47,9 @@ templ BucketsContent(buckets []BucketInfo, csrfToken string) {
 		<template x-if="showLifecycle">
 			@LifecycleModal()
 		</template>
-		@Dialog("showFlush", "Flush Bucket", "Upload all pending objects in this bucket to the network and pin them?", "Flush", "btn-primary")
 		@Dialog("showVersioning", "Confirm Versioning Change", "Change versioning status for this bucket?", "Confirm", "btn-primary")
 	</div>
-	
+
 }
 
 templ BucketRow(b BucketInfo) {
@@ -89,14 +86,6 @@ templ BucketRow(b BucketInfo) {
 				@click={ fmt.Sprintf("toggleVersioning('%s', '%s')", jsEscape(b.Name), jsEscape(b.Versioning)) }
 			>
 				{ versioningButtonLabel(b.Versioning) }
-			</button>
-			<button
-				type="button"
-				class="link-action"
-				title="Force-upload all buffered objects to the network and pin them"
-				@click={ fmt.Sprintf("openFlush('%s')", jsEscape(b.Name)) }
-			>
-				Flush
 			</button>
 		</div>
 	</div>
