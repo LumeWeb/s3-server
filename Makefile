@@ -13,7 +13,7 @@ all: web css generate build
 # --- Dependencies ---
 
 deps:
-	cd $(WEB_DIR) && bun install
+	bun install
 	$(GO) mod download
 
 # --- Frontend ---
@@ -24,7 +24,7 @@ web:
 
 # Build minified Tailwind v4 CSS — @source directives in input.css handle content scanning
 css:
-	cd $(WEB_DIR) && bun x tailwindcss -i ../internal/views/css/input.css -o ../internal/views/css/tailwind.css --minify
+	bun run build:css
 
 # --- Code generation ---
 
@@ -87,7 +87,7 @@ clean:
 # --- Help ---
 
 help:
-	@echo "s3d-panel build targets:"
+	@echo "s3-server build targets:"
 	@echo "  all       - Full build: web + css + generate + build"
 	@echo "  deps      - Install JS + Go dependencies"
 	@echo "  web       - Build Vite frontend bundle"

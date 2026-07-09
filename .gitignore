@@ -1,11 +1,12 @@
 .env
 node_modules/
-bun.lock
+pnpm-lock.yaml
 bin/
 data/*
 !data/panel.yml
 .worktrees/
 internal/views/web/dist/
+!internal/views/web/dist/.gitkeep
 
 # Generated templ files
 internal/views/css/tailwind.css
