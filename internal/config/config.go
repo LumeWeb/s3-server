@@ -61,10 +61,56 @@ type S3Config struct {
 type PanelConfig struct {
 	AdminPasswordHash string    `koanf:"admin_password_hash" json:"-"`
 	OnboardingState   string    `koanf:"onboarding_state" json:"onboarding_state"`
+	PlatformID        string    `koanf:"platform_id" json:"platform_id,omitempty"`
 	AccessKeys        []KeyPair `koanf:"access_keys" json:"access_keys"`
 	SSL               SSLConfig `koanf:"ssl" json:"ssl"`
 	S3                S3Config  `koanf:"s3" json:"s3"`
 	Log               LogConfig `koanf:"log" json:"log"`
+}
+
+// DefaultPlatformName is the fallback when PlatformID is empty or unknown.
+const DefaultPlatformName = "deployment platform"
+
+// platformNames maps deployment platform IDs to human-readable names.
+// The deployment packaging sets S3_SERVER_PLATFORM_ID to identify itself.
+var platformNames = map[string]string{
+	"coolify": "Coolify",
+	"k8s":     "Kubernetes",
+	"docker":  "Docker",
+	"compose": "Docker Compose",
+	"systemd": "systemd",
+}
+
+// ResolvePlatformName returns the human-readable name for the configured
+// PlatformID by looking it up in the platformNames registry.
+// If the ID is empty or not found, DefaultPlatformName is returned.
+func ResolvePlatformName(platformID string) string {
+	if name, ok := platformNames[platformID]; ok {
+		return name
+	}
+	return DefaultPlatformName
+}
+
+// DefaultS3DirectoryVal is the default directory for S3 data storage.
+// Exported as a constant so other packages can compare without hardcoding.
+const DefaultS3DirectoryVal = "/var/lib/s3-server"
+
+// DefaultS3Directory returns the default S3 data directory.
+func DefaultS3Directory() string {
+	return DefaultS3DirectoryVal
+}
+
+// ResolveS3Directory returns the S3 data directory to use, given the configured
+// directory and the data-dir flag value. If the configured directory is the
+// default and doesn't exist on disk, it falls back to dataDir so local/dev
+// launches with --data-dir work without manually creating /var/lib/s3-server.
+func ResolveS3Directory(configuredDir, dataDir string) string {
+	if configuredDir == DefaultS3DirectoryVal {
+		if _, err := os.Stat(configuredDir); os.IsNotExist(err) {
+			return dataDir
+		}
+	}
+	return configuredDir
 }
 
 func DefaultConfig() PanelConfig {
