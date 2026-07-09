@@ -74,14 +74,6 @@ func versioningButtonLabel(status string) string {
 	return "Enable Versioning"
 }
 
-// versioningToggle returns the target status when toggling versioning.
-func versioningToggle(status string) string {
-	if status == "Enabled" {
-		return "Suspended"
-	}
-	return "Enabled"
-}
-
 // countWord formats an integer count with a noun, choosing singular or plural
 // using the rickb777/plural package. For zero, the plural form is used.
 //

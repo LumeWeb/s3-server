@@ -1,5 +1,16 @@
 # syntax=docker/dockerfile:1
 
+# Frontend build stage
+FROM oven/bun:1 AS frontend
+
+WORKDIR /src
+COPY package.json bun.lock ./
+COPY web/ web/
+COPY internal/views/ internal/views/
+RUN bun install
+RUN cd web && bun run build
+RUN bun run build:css
+
 # Build stage
 FROM golang:1.26-bookworm AS builder
 
@@ -9,8 +20,16 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy source and build
+# Copy source + generated frontend assets
 COPY . .
+COPY --from=frontend /src/internal/views/web/dist/ internal/views/web/dist/
+COPY --from=frontend /src/internal/views/css/tailwind.css internal/views/css/
+
+# Generate templ + build metadata
+RUN go install github.com/a-h/templ/cmd/templ@latest
+RUN go generate ./internal/build
+RUN templ generate
+
 ARG VERSION=dev
 RUN CGO_ENABLED=1 GOOS=linux go build \
     -ldflags="-s -w -X main.appVersion=${VERSION}" \

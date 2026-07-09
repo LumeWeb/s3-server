@@ -177,7 +177,7 @@ func (s *Services) serveBackup(c *echo.Context, delete bool) error {
 		}
 		return api.SendInternal(c, api.TypeBackupOpenFailed, "failed to open backup", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	c.Response().Header().Set("Content-Type", "application/octet-stream")
 	c.Response().Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))

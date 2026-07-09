@@ -989,7 +989,7 @@ func TestServices_MonitoringPage(t *testing.T) {
 	svc.adminHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/stats/uploads", r.URL.Path)
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{
+		_, _ = w.Write([]byte(`{
 			"pendingObjects": 3,
 			"pendingSize": 1024,
 			"uploadedObjects": 10,

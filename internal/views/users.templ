@@ -45,7 +45,7 @@ templ UsersContent(users []UserInfo, csrfToken string) {
 			@CreateUserModal()
 		</template>
 		@Dialog("showDelete", "Delete User", "Delete this user and all associated access keys? This cannot be undone.", "Delete", "btn-danger")
-		</div>
+	</div>
 }
 
 templ UserRow(u UserInfo) {
