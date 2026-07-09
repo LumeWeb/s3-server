@@ -1,0 +1,35 @@
+package views
+
+import _ "embed"
+
+//go:embed assets/logo.svg
+var logoSVG string
+
+templ Logo() {
+	@templ.Raw(logoSVG)
+}
+
+templ Spinner() {
+	<svg class="animate-spin h-5 w-5" viewBox="0 0 24 24">
+		<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle>
+		<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+	</svg>
+}
+
+templ LogoTitle(title string, large bool) {
+	if large {
+		<div class="flex items-center justify-center space-x-3 mb-6">
+			<div class="h-10 w-10 text-primary">
+				@Logo()
+			</div>
+			<h1 class="text-2xl font-bold font-display text-primary">{ title }</h1>
+		</div>
+	} else {
+		<div class="flex items-center space-x-3">
+			<div class="h-8 w-8 text-primary">
+				@Logo()
+			</div>
+			<h1 class="text-lg font-bold font-display text-primary">{ title }</h1>
+		</div>
+	}
+}

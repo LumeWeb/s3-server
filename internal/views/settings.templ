@@ -1,0 +1,336 @@
+package views
+
+import (
+	"go.lumeweb.com/s3-server/internal/config"
+	"go.lumeweb.com/s3-server/internal/updater"
+	"strings"
+)
+
+templ Settings(csrfToken string, s3Cfg config.S3Config, sslCfg config.SSLConfig, updateStatus updater.UpdateStatus, platformName string, panelVersion string, s3dVersion string) {
+	@Base("Settings", SettingsContent(csrfToken, s3Cfg, sslCfg, updateStatus, platformName, panelVersion, s3dVersion))
+}
+
+func joinHostBases(bases []string) string {
+	return strings.Join(bases, ", ")
+}
+
+func buildIndexerList(current string, available []string) []string {
+	for _, u := range available {
+		if u == current {
+			return available
+		}
+	}
+	return append([]string{current}, available...)
+}
+
+templ SettingsContent(csrfToken string, s3Cfg config.S3Config, sslCfg config.SSLConfig, updateStatus updater.UpdateStatus, platformName string, panelVersion string, s3dVersion string) {
+	<div class="min-h-screen">
+		@Nav("settings", "", csrfToken)
+		<data id="settings-data" class="hidden">{ templ.JSONString(map[string]any{
+			"s3": map[string]any{
+				"directory":          s3Cfg.Directory,
+				"indexer_url":        s3Cfg.IndexerURL,
+				"available_indexers": buildIndexerList(s3Cfg.IndexerURL, s3Cfg.AvailableIndexers),
+				"indexer_selection":  s3Cfg.IndexerURL,
+				"custom_indexer":     "",
+				"host_bases_input":   joinHostBases(s3Cfg.HostBases),
+			},
+			"ssl": map[string]any{
+				"mode":         sslCfg.Mode,
+				"acme_email":   sslCfg.ACMEEmail,
+				"acme_dir_url": sslCfg.ACMEDirURL,
+			},
+			"update": map[string]any{
+				"sidecar_mode":   updateStatus.SidecarMode,
+				"auto_update_on": updateStatus.AutoUpdateOn,
+				"last_digest":    updateStatus.LastDigest,
+				"updater_log":    updateStatus.UpdaterLog,
+			},
+		}) }</data>
+		<div class="max-w-3xl mx-auto px-4 py-6 space-y-6" x-data="settingsApp" x-cloak>
+			@CardSection("S3 Configuration") {
+				<form @submit.prevent="saveS3Config()" class="p-4 space-y-4">
+					@FormRow("Data Directory", "s3-directory", "") {
+						<input type="text" id="s3-directory" x-model="s3.directory" required class="form-input" placeholder="Enter data directory path"/>
+					}
+					@FormRow("Indexer", "s3-indexer", "Cannot be changed after initial setup. Changing the indexer requires migrating existing data.") {
+						<select id="s3-indexer" x-model="s3.indexer_selection" disabled class="form-select opacity-60 cursor-not-allowed">
+							<template x-for="(url, i) in s3.available_indexers" :key="i">
+								<option :value="url" x-text="url"></option>
+							</template>
+						</select>
+					}
+					@FormRow("Host Bases", "s3-hostbases", "Comma-separated domains for virtual-hosted-style S3 URLs") {
+						<input type="text" id="s3-hostbases" x-model="s3.host_bases_input" class="form-input" placeholder="s3.example.com, storage.example.org"/>
+					}
+					<div class="flex items-center justify-end gap-3">
+							<button type="submit" :disabled="s3Saving" class="btn-sm">
+						<span x-show="!s3Saving">Save</span>
+						<span x-show="s3Saving" x-cloak class="flex items-center gap-1.5"><span class="spin"></span> Saving…</span>
+					</button>
+						</div>
+					<div class="border-t border-border pt-4 flex items-center justify-between" x-data="{ flushing: false, showFlush: false }"
+						@dialog-confirm.window="
+								if ($event.detail?.source === 'showFlush') {
+									window.__sseAction('Flushing all buckets…', () => window.__api.post('/_panel/api/system/flush'), 'Buckets flushed')
+										.finally(() => { flushing = false; });
+								}
+							"
+					>
+						<div>
+							<div class="text-sm text-foreground font-body">Flush all buckets</div>
+							<div class="text-xs text-muted-foreground font-body">Upload all pending objects immediately.</div>
+						</div>
+						<button
+							type="button"
+							class="btn-sm"
+							:disabled="flushing"
+							@click="showFlush = true"
+						>
+							<span x-show="!flushing">Flush All</span>
+							<span x-show="flushing" x-cloak class="flex items-center gap-1.5"><span class="spin"></span> Flushing…</span>
+						</button>
+						@Dialog("showFlush", "Flush all buckets", "Uploads all pending objects to the storage network immediately.", "Flush All", "btn-sm")
+					</div>
+				</form>
+			}
+
+			@CardSection("SSL Configuration") {
+				<form @submit.prevent="saveSSLConfig()" class="p-4 space-y-4">
+					@FormRow("SSL Mode", "ssl-mode", "Changing SSL mode requires a server restart.") {
+						<select id="ssl-mode" x-model="ssl.mode" class="form-select">
+							<option value="none">None (HTTP only)</option>
+							<option value="platform">Platform (PaaS/K8s handles TLS)</option>
+							<option value="managed">Managed (built-in certificate management)</option>
+						</select>
+					}
+					<div x-show="ssl.mode === 'managed'">
+						@FormRow("Email", "ssl-email", "Used for certificate expiry notifications") {
+							<input type="email" id="ssl-email" x-model="ssl.acme_email" :required="ssl.mode === 'managed'" class="form-input" placeholder="admin@example.com"/>
+						}
+						</div>
+						<div x-show="ssl.mode === 'managed'">
+						@FormRow("Directory URL", "ssl-dir-url", "Leave empty for default. Use staging URL for testing.") {
+							<input type="url" id="ssl-dir-url" x-model="ssl.acme_dir_url" class="form-input" placeholder="https://acme-staging.example.org/directory"/>
+						}
+						</div>
+					<div class="flex items-center justify-end gap-3">
+						<button type="submit" :disabled="sslSaving" class="btn-sm">
+						<span x-show="!sslSaving">Save</span>
+						<span x-show="sslSaving" x-cloak class="flex items-center gap-1.5"><span class="spin"></span> Saving…</span>
+					</button>
+					</div>
+				</form>
+			}
+
+			@CardSection("Software Updates") {
+				<div
+					class="p-4 space-y-4"
+					x-data="updateControlsApp"
+					x-init="init()"
+				>
+					<!-- Sidecar mode: full controls -->
+					<template x-if="sidecarMode">
+						<div class="space-y-4">
+							<!-- Auto-update toggle -->
+							<div class="flex items-center justify-between">
+								<div>
+									<div class="text-sm text-foreground font-body">Auto-update</div>
+									<div class="text-xs text-muted-foreground font-body">Automatically download and apply new versions when available.</div>
+								</div>
+								<label class="relative inline-flex items-center cursor-pointer">
+									<input
+										type="checkbox"
+										class="sr-only peer"
+										:checked="autoUpdateOn"
+										@change="toggleAutoUpdate()"
+										:disabled="toggleLoading"
+									/>
+									<div class="w-11 h-6 bg-muted peer-checked:bg-primary rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
+								</label>
+							</div>
+							<p x-show="toggleMsg" x-cloak class="text-sm font-body" :class="toggleErr ? 'text-destructive' : 'text-primary'" x-text="toggleMsg"></p>
+
+							<!-- Manual update trigger -->
+							<div class="border-t border-border pt-4 flex items-center justify-between">
+								<div>
+									<div class="text-sm text-foreground font-body">Manual update</div>
+									<div class="text-xs text-muted-foreground font-body">
+										Triggers an immediate update check on the next sidecar poll cycle.
+										<template x-if="lastDigest">
+											<span>Current digest: <code class="text-xs text-muted-foreground" x-text="lastDigest.substring(0, 19) + '…'"></code></span>
+										</template>
+									</div>
+								</div>
+								<button
+									type="button"
+									class="btn-sm"
+									:disabled="triggerLoading"
+									@click="triggerUpdate()"
+									x-text="triggerLoading ? 'Triggering…' : 'Update & Restart'"
+								></button>
+							</div>
+							<p x-show="triggerMsg" x-cloak class="text-sm font-body" :class="triggerErr ? 'text-destructive' : 'text-primary'" x-text="triggerMsg"></p>
+
+							<!-- Updater log -->
+							<div x-show="updaterLog.length > 0" class="border-t border-border pt-4">
+								<div class="text-sm text-foreground font-body mb-2">Updater log</div>
+								<pre class="bg-muted/50 rounded p-3 text-xs text-muted-foreground font-mono overflow-x-auto max-h-48 overflow-y-auto"><template x-for="(line, i) in updaterLog" :key="i"><span x-text="line"></span>
+</template></pre>
+							</div>
+						</div>
+					</template>
+
+						<!-- Badge mode: update available badge (no /state volume) -->
+						<template x-if="!sidecarMode">
+							<div class="space-y-3" x-data="{ versionResult: null, versionLoading: true, versionErr: false }" x-init="fetch('/_panel/api/version').then(r => r.json()).then(d => { versionResult = d; versionLoading = false }).catch(() => { versionLoading = false; versionErr = true })">
+								<div class="flex items-center justify-between">
+										<div>
+											<div class="text-sm text-foreground font-body">Software version</div>
+											<div class="text-xs text-muted-foreground font-body">Panel <code x-text="versionResult?.current_version || '...'"></code> · s3d <code>{ s3dVersion }</code></div>
+										</div>
+									<template x-if="versionLoading">
+										<span class="text-sm text-muted-foreground font-body">Checking…</span>
+									</template>
+									<template x-if="versionErr">
+										<span class="text-sm text-muted-foreground font-body">Unable to check</span>
+									</template>
+									<template x-if="!versionLoading && !versionErr && versionResult?.update_available">
+										<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-body bg-amber-500/10 text-amber-500 border border-amber-500/20">
+											<svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+												<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/>
+											</svg>
+											Update available: <span x-text="versionResult?.latest_version"></span>
+										</span>
+									</template>
+									<template x-if="!versionLoading && !versionErr && !versionResult?.update_available">
+										<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-body bg-primary/10 text-primary border border-primary/20">
+											<svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+												<path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+											</svg>
+											Up to date
+										</span>
+									</template>
+								</div>
+							<div class="text-xs text-muted-foreground font-body border-t border-border pt-3">
+								Updates are managed by { platformName }. To enable in-panel updates, deploy with the update sidecar.
+							</div>
+						</div>
+					</template>
+				</div>
+			}
+
+			@CardSection("Admin Password") {
+				<div class="p-4 space-y-4"
+					x-data="{
+						showChangePw: false,
+						loading: false,
+						showPw: false,
+						currentPw: '',
+						newPw: '',
+						confirmPw: '',
+						async changePassword() {
+							if (this.newPw !== this.confirmPw) { window.__sseToast('Passwords do not match', 'error'); return; }
+							if (this.newPw.length < 8) { window.__sseToast('Password must be at least 8 characters', 'error'); return; }
+							this.loading = true;
+							try {
+								await window.__sseAction('Changing password…',
+									() => window.__api.post('/_panel/api/password/change', { current_password: this.currentPw, new_password: this.newPw }),
+									'Password changed successfully');
+								this.showChangePw = false;
+								this.currentPw = ''; this.newPw = ''; this.confirmPw = '';
+							} catch (e) {}
+							this.loading = false;
+						}
+					}">
+					<div class="flex items-center justify-between">
+						<div>
+							<div class="text-sm text-foreground font-body">Change admin password</div>
+							<div class="text-xs text-muted-foreground font-body">Update the password used to sign in to the panel.</div>
+						</div>
+						<button type="button" class="btn-sm" @click="showChangePw = !showChangePw" x-text="showChangePw ? 'Cancel' : 'Change'"></button>
+					</div>
+					<div x-show="showChangePw" x-cloak class="space-y-3 pt-2">
+						@FormRow("Current Password", "current-pw", "") {
+							<div class="relative">
+								<input :type="showPw ? 'text' : 'password'" id="current-pw" x-model="currentPw" required autocomplete="current-password" class="form-input pr-10" placeholder="Current password"/>
+								<button type="button" @click="showPw = !showPw" class="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-primary transition-colors" aria-label="Toggle password visibility">
+									<svg x-show="!showPw" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+										<path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/>
+										<path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+									</svg>
+									<svg x-show="showPw" x-cloak class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+										<path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.243 4.243L9.88 9.88"/>
+									</svg>
+								</button>
+							</div>
+						}
+						@FormRow("New Password", "new-pw", "") {
+							<div class="relative">
+								<input :type="showPw ? 'text' : 'password'" id="new-pw" x-model="newPw" required minlength="8" autocomplete="new-password" class="form-input pr-10" placeholder="New password"/>
+								<button type="button" @click="showPw = !showPw" class="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-primary transition-colors" aria-label="Toggle password visibility">
+									<svg x-show="!showPw" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+										<path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/>
+										<path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+									</svg>
+									<svg x-show="showPw" x-cloak class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+										<path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.243 4.243L9.88 9.88"/>
+									</svg>
+								</button>
+							</div>
+						}
+						@FormRow("Confirm New Password", "confirm-pw", "") {
+							<div class="relative">
+								<input :type="showPw ? 'text' : 'password'" id="confirm-pw" x-model="confirmPw" required minlength="8" autocomplete="new-password" class="form-input pr-10" placeholder="Confirm new password"/>
+								<button type="button" @click="showPw = !showPw" class="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-primary transition-colors" aria-label="Toggle password visibility">
+									<svg x-show="!showPw" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+										<path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/>
+										<path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+									</svg>
+									<svg x-show="showPw" x-cloak class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+										<path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.243 4.243L9.88 9.88"/>
+									</svg>
+								</button>
+							</div>
+						}
+						<button type="button" class="btn-sm w-full" :disabled="loading" @click="changePassword()">
+						<span x-show="!loading">Change Password</span>
+						<span x-show="loading" x-cloak class="flex items-center gap-1.5"><span class="spin"></span> Saving…</span>
+					</button>
+					</div>
+				</div>
+			}
+
+			@CardSectionDanger("Danger Zone") {
+				<div
+					class="p-4 space-y-4"
+					x-data="{ restarting: false, showRestart: false }"
+					@dialog-confirm.window="
+							if ($event.detail?.source === 'showRestart') {
+								window.__sseAction('Restarting backend…', () => window.__api.post('/_panel/api/system/restart'), 'Backend restart initiated')
+									.finally(() => { restarting = false; });
+							}
+						"
+				>
+					<div class="flex items-center justify-between">
+						<div>
+							<div class="text-sm text-foreground font-body">Restart backend</div>
+							<div class="text-xs text-muted-foreground font-body">Stops and starts the S3 backend. Active uploads will fail.</div>
+						</div>
+						<button
+							type="button"
+							class="btn-danger text-sm px-4 py-2"
+							:disabled="restarting"
+							@click="showRestart = true"
+							>
+							<span x-show="!restarting">Restart</span>
+							<span x-show="restarting" x-cloak class="flex items-center gap-1.5"><span class="spin"></span> Restarting…</span>
+							</button>
+					</div>
+					@Dialog("showRestart", "Restart backend", "This will stop and start the S3 backend. Any active uploads will fail.", "Restart", "btn-danger")
+				</div>
+			}
+		</div>
+
+	</div>
+}

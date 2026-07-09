@@ -1,0 +1,19 @@
+package views
+
+templ CardSection(title string) {
+	<div class="card">
+		<div class="card-header">
+			<h2 class="font-bold font-display text-foreground">{ title }</h2>
+		</div>
+		{ children... }
+	</div>
+}
+
+templ CardSectionDanger(title string) {
+	<div class="card border-destructive/30!">
+		<div class="card-header border-destructive/20!">
+			<h2 class="font-bold font-display text-destructive">{ title }</h2>
+		</div>
+		{ children... }
+	</div>
+}

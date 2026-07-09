@@ -1,0 +1,118 @@
+@import "tailwindcss";
+
+@source "../../**/*.templ";
+@source "../../**/*.go";
+
+@theme {
+    --font-sans: "Poppins", ui-sans-serif, system-ui, sans-serif;
+    --font-display: "Poppins", ui-sans-serif, system-ui, sans-serif;
+    --font-body: "Poppins", ui-sans-serif, system-ui, sans-serif;
+
+    --color-background: #0d1d1c;
+    --color-foreground: #f8f8f8;
+
+    --color-card: #051413;
+    --color-card-foreground: #f8f8f8;
+
+    --color-popover: #0d2d2a;
+    --color-popover-foreground: #f8f8f8;
+
+    --color-primary: #abeedb;
+    --color-primary-foreground: #0d1d1c;
+
+    --color-secondary: #0d2d2a;
+    --color-secondary-foreground: #abeedb;
+
+    --color-muted: #0d2d2a;
+    --color-muted-foreground: #bdc2c1;
+
+    --color-accent: #ff6647;
+    --color-accent-foreground: #ffffff;
+
+    --color-destructive: #f87171;
+    --color-destructive-foreground: #ffffff;
+
+    --color-border: #22504b;
+    --color-surface-border: #3a8077;
+    --color-input: #040f11;
+    --color-ring: #abeedb;
+    --color-destructive-light: #fca5a5;
+}
+
+[x-cloak] { display: none !important; }
+
+::placeholder {
+    color: #b0b6b4;
+    opacity: 1;
+}
+
+@utility card {
+    @apply bg-card text-card-foreground rounded-lg border border-surface-border/70;
+}
+@utility card-header {
+    @apply px-4 py-3 border-b border-border;
+}
+@utility form-label {
+    @apply block text-sm font-medium text-foreground mb-1 font-body;
+}
+@utility form-input {
+    @apply w-full px-3 py-2.5 bg-input border border-muted-foreground/20 rounded-md focus:outline-none focus:ring-2 focus:ring-ring focus:border-primary text-foreground font-display min-h-[44px];
+}
+@utility form-select {
+    @apply w-full px-3 py-2.5 bg-input border border-muted-foreground/20 rounded-md focus:outline-none focus:ring-2 focus:ring-ring focus:border-primary text-foreground font-display min-h-[44px] appearance-none bg-no-repeat pr-10 cursor-pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23abeedb' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+    background-position: right 0.5rem center;
+    background-size: 1rem;
+}
+@utility form-hint {
+    @apply text-sm text-muted-foreground mt-1 font-body;
+}
+@utility btn-primary {
+    @apply bg-primary text-primary-foreground hover:enabled:bg-secondary hover:enabled:text-secondary-foreground disabled:bg-secondary/40 disabled:text-foreground/60 disabled:cursor-not-allowed rounded-md font-bold font-display transition-colors cursor-pointer;
+}
+@utility btn-danger {
+    @apply bg-destructive/10 hover:bg-destructive/20 text-destructive border border-destructive/30 rounded-md font-bold font-display transition-colors cursor-pointer;
+}
+@utility btn-full {
+    @apply btn-primary w-full py-2 px-4;
+}
+@utility btn-sm {
+    @apply btn-primary px-4 py-2 text-sm;
+}
+@utility btn-ghost {
+    @apply text-muted-foreground hover:text-primary rounded-md font-body transition-colors cursor-pointer;
+}
+@utility link-danger {
+    @apply text-xs text-destructive hover:text-destructive-light transition-colors font-body px-2 py-1 cursor-pointer;
+}
+@utility link-action {
+    @apply text-xs btn-ghost px-2 py-1;
+}
+@utility modal-close {
+    @apply text-muted-foreground hover:text-foreground transition-colors cursor-pointer;
+}
+@utility btn-link {
+    @apply text-primary hover:text-primary/80 font-bold font-display text-sm transition-colors cursor-pointer;
+}
+@utility btn-secondary {
+    @apply bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded-md font-bold font-display transition-colors cursor-pointer;
+}
+@utility step-heading {
+    @apply text-lg font-bold font-display text-foreground mb-2;
+}
+@utility step-desc {
+    @apply text-foreground/80 text-sm mb-4 font-body;
+}
+@utility error-msg {
+    @apply mt-2 text-destructive text-sm font-body;
+}
+@utility stat-card {
+    @apply card p-4;
+}
+
+@utility nav-sep {
+    @apply w-px h-4 bg-border mx-1;
+}
+@utility spin {
+    @apply inline-block animate-spin h-4 w-4 border-2 border-primary border-t-transparent rounded-full;
+}

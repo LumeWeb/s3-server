@@ -5,3 +5,8 @@ bin/
 data/*
 !data/panel.yml
 .worktrees/
+internal/views/web/dist/
+
+# Generated templ files
+internal/views/css/tailwind.css
+internal/views/*_templ.go

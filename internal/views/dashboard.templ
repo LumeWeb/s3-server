@@ -1,0 +1,85 @@
+package views
+
+templ Dashboard(version string, groups []UserKeyGroup, csrfToken string) {
+	@Base("Dashboard", DashboardContent(version, groups, csrfToken))
+}
+
+templ DashboardContent(version string, groups []UserKeyGroup, csrfToken string) {
+	<div class="min-h-screen" x-data="dashboardApp" x-cloak>
+		@Nav("dashboard", version, csrfToken)
+
+		<div class="max-w-5xl mx-auto px-4 py-6 space-y-6">
+			<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+				<div class="stat-card">
+					<div class="flex items-center gap-2">
+						<div class="h-2 w-2 rounded-full" :class="isRunning ? 'bg-primary' : 'bg-destructive'"></div>
+						<div class="text-sm text-muted-foreground font-body">S3 Backend</div>
+					</div>
+					<div class="text-xl font-bold font-display mt-1" :class="isRunning ? 'text-primary' : 'text-destructive'" x-text="isRunning ? 'Running' : 'Stopped'"></div>
+					<template x-if="initError">
+						<div class="text-xs text-destructive/80 mt-1 font-body" x-text="initError"></div>
+					</template>
+				</div>
+				<div class="stat-card">
+					<div class="text-sm text-muted-foreground font-body">Access Keys</div>
+					<div class="text-xl font-bold font-display mt-1 text-foreground" x-text="keyCount"></div>
+				</div>
+				<div class="stat-card">
+					<div class="text-sm text-muted-foreground font-body">Uptime</div>
+					<div class="text-xl font-bold font-display mt-1 text-foreground" x-text="uptime"></div>
+				</div>
+			</div>
+
+			<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+				<div class="lg:col-span-2 card">
+					<div class="card-header flex items-center justify-between">
+						<h2 class="font-bold font-display text-foreground">Access Keys</h2>
+						if len(groups) <= 1 {
+							<button
+								type="button"
+								class="btn-primary text-sm px-3 py-1.5"
+								:disabled="!isRunning || generating"
+								:class="(!isRunning || generating) && 'opacity-50 cursor-not-allowed'"
+								@click="generating = true; window.__sseAction('Generating key…', () => window.__api.post('/_panel/api/keys', { user_name: 'default' }), 'Access key generated').then(() => setTimeout(() => window.location.reload(), 500)).catch(() => {}).finally(() => { generating = false; })"
+							>
+								<span x-show="!generating" x-cloak>+ Generate Key</span>
+								<span x-show="generating" x-cloak class="flex items-center gap-1.5"><span class="spin"></span> Generating…</span>
+							</button>
+						}
+					</div>
+					<div id="keys-list" class="divide-y divide-surface-border">
+							@KeyList(groups, len(groups) > 1, true)
+						</div>
+					<div id="key-notification"></div>
+				</div>
+
+				<div class="card">
+					<div class="card-header">
+						<h2 class="font-bold font-display text-foreground">Quick Actions</h2>
+					</div>
+					<div class="p-3 space-y-1">
+						@quickAction("Create User", "/_panel/users")
+						@quickAction("Create Bucket", "/_panel/buckets")
+						@quickAction("Backup Now", "/_panel/backups")
+						@quickAction("View Monitoring", "/_panel/monitoring")
+						@quickAction("Settings", "/_panel/settings")
+					</div>
+				</div>
+			</div>
+		</div>
+
+		
+	</div>
+}
+
+templ quickAction(label string, href string) {
+	<a
+		href={ templ.SafeURL(href) }
+		class="flex items-center justify-between px-3 py-2 rounded-md hover:bg-card/30 transition-colors group"
+	>
+		<span class="text-sm text-muted-foreground font-body group-hover:text-primary transition-colors">{ label }</span>
+		<svg class="h-4 w-4 text-muted-foreground/60 group-hover:text-primary transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+			<path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5"/>
+		</svg>
+	</a>
+}

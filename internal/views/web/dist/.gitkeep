@@ -1,0 +1,3 @@
+# Frontend build output directory.
+# Run `pnpm build` in the frontend workspace to populate this directory
+# with panel.js, panel.css, fonts, and WASM before building the Go binary.
