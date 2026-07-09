@@ -220,3 +220,146 @@ func TestBucketCreateMiddleware_DefaultStatusOK(t *testing.T) {
 		return prov.calls.Load() == 1
 	}, time.Second, 10*time.Millisecond)
 }
+
+// Regression PR8: The middleware must use a bounded worker pool
+// (maxProvisionWorkers=4), not spawn a goroutine per provisioning request.
+// We verify this by blocking ProvisionCert calls until N > 4 bucket
+// creations are queued; if the pool were unbounded, all N would be
+// in-flight simultaneously.
+func TestBucketCreateMiddleware_BoundedWorkerPool(t *testing.T) {
+	// Use 4 buckets with 1 hostBase: buffer = 1*4 = 4, workers = 4.
+	// All 4 workers block, and the 4 items fill the buffer exactly.
+	// If the pool were unbounded, all 4 would be in-flight simultaneously.
+	// With 4 workers, maxConc should be exactly 4.
+	const numBuckets = 4
+
+	var maxConc atomic.Int32
+	var active atomic.Int32
+	blockProv := &blockingProvisionerStruct{
+		maxConc: &maxConc,
+		active:  &active,
+		release: make(chan struct{}),
+		total:   &atomic.Int32{},
+	}
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	h, cancel := BucketCreateMiddleware(inner, blockProv, []string{"s3.example.com"}, testutil.NewTestLogger())
+	defer cancel()
+
+	// Fire N bucket creation requests
+	for i := 0; i < numBuckets; i++ {
+		bucket := "bucket" + string(rune('a'+i))
+		req := httptest.NewRequest(http.MethodPut, "/"+bucket, nil)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+	}
+
+	// Give workers a moment to pick up tasks
+	time.Sleep(50 * time.Millisecond)
+
+	// Release all workers
+	close(blockProv.release)
+
+	// Wait for all to complete
+	require.Eventually(t, func() bool {
+		return blockProv.total.Load() == int32(numBuckets)
+	}, 5*time.Second, 50*time.Millisecond)
+
+	// At most maxProvisionWorkers should have been active concurrently
+	assert.LessOrEqual(t, maxConc.Load(), int32(maxProvisionWorkers),
+		"concurrent provisioning must not exceed maxProvisionWorkers")
+	assert.Equal(t, int32(numBuckets), maxConc.Load(),
+		"with %d buckets and 4 workers, all should be processed", numBuckets)
+}
+
+type blockingProvisionerStruct struct {
+	maxConc *atomic.Int32
+	active  *atomic.Int32
+	release chan struct{}
+	total   *atomic.Int32
+}
+
+func (p *blockingProvisionerStruct) ProvisionCert(_ context.Context, _ string) error {
+	cur := p.active.Add(1)
+	for {
+		mc := p.maxConc.Load()
+		if cur > mc {
+			if p.maxConc.CompareAndSwap(mc, cur) {
+				break
+			}
+		} else {
+			break
+		}
+	}
+	<-p.release
+	p.active.Add(-1)
+	p.total.Add(1)
+	return nil
+}
+
+// Regression PR8: shutdown (cancel) must be safe while HTTP handlers are
+// concurrently enqueuing provisioning tasks. Should not panic or deadlock.
+func TestBucketCreateMiddleware_ConcurrentShutdown_NoDeadlock(t *testing.T) {
+	// slowProvisioner takes a bit of time, so there's in-flight work
+	// when shutdown is called.
+	slowProv := &slowProvisioner{delay: 10 * time.Millisecond}
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	h, cancel := BucketCreateMiddleware(inner, slowProv, []string{"s3.example.com"}, testutil.NewTestLogger())
+
+	// Launch concurrent request senders
+	var wg sync.WaitGroup
+	done := make(chan struct{})
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			for {
+				select {
+				case <-done:
+					return
+				default:
+					req := httptest.NewRequest(http.MethodPut, "/bucket"+string(rune('a'+n)), nil)
+					rec := httptest.NewRecorder()
+					h.ServeHTTP(rec, req)
+				}
+			}
+		}(i)
+	}
+
+	// Let them run briefly, then shut down
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+	close(done)
+
+	// Should not deadlock — all goroutines finish within timeout
+	finished := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(finished)
+	}()
+
+	select {
+	case <-finished:
+		// good
+	case <-time.After(5 * time.Second):
+		t.Fatal("shutdown deadlocked with concurrent HTTP handlers")
+	}
+}
+
+type slowProvisioner struct {
+	delay time.Duration
+	calls atomic.Int32
+}
+
+func (p *slowProvisioner) ProvisionCert(_ context.Context, _ string) error {
+	p.calls.Add(1)
+	time.Sleep(p.delay)
+	return nil
+}

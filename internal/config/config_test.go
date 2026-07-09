@@ -252,3 +252,53 @@ func TestLoad_StatError_PropagatesNonNotExist(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to stat config file")
 }
+
+// Regression PR2: Save must tighten permissions on a pre-existing file
+// that was created with looser perms (e.g. 0644). The atomic write path
+// uses a temp file + rename, and must chmod the result to 0600.
+func TestSave_TightensPermissionsOnExistingFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "panel.yml")
+
+	// Create a file with loose permissions
+	require.NoError(t, os.WriteFile(path, []byte("old: data\n"), 0644))
+
+	// Save over it
+	require.NoError(t, Save(path, DefaultConfig()))
+
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0600), info.Mode().Perm(),
+		"existing file perms must be tightened to 0600 after Save")
+}
+
+// Regression PR2: Save must be atomic — if the write fails (e.g. disk
+// error), the original file must remain intact. The temp-file + rename
+// approach ensures the original is untouched on failure.
+func TestSave_AtomicWrite_OriginalIntactOnFailure(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "panel.yml")
+
+	// Write an original config
+	original := DefaultConfig()
+	original.OnboardingState = "complete"
+	require.NoError(t, Save(path, original))
+
+	// Read original content for comparison
+	originalData, err := os.ReadFile(path)
+	require.NoError(t, err)
+
+	// Make the directory read-only so the temp file write fails
+	require.NoError(t, os.Chmod(dir, 0500))
+	defer os.Chmod(dir, 0700) // restore for cleanup
+
+	// Attempt to save — should fail because the temp file can't be written
+	err = Save(path, DefaultConfig())
+	require.Error(t, err)
+
+	// Original file must be intact
+	currentData, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, originalData, currentData,
+		"original file must be unchanged on write failure")
+}

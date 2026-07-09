@@ -241,3 +241,74 @@ func TestDashboardEventJSON(t *testing.T) {
 	assert.Contains(t, string(data), `"s3_status":"running"`)
 	assert.Contains(t, string(data), `"key_count":2`)
 }
+
+// Regression PR10: Concurrent SetStatsFetcher/SetInitError (writers) and
+// publishStatus/publishStats (readers) must not race. The RWMutex on the
+// Broker prevents a data race between setting and reading the fetcher/initError
+// function pointers. Run with -race to detect.
+func TestBroker_ConcurrentSetAndPublish_NoRace(t *testing.T) {
+	b, _ := newTestBroker(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	b.StartStatusLoop(ctx, "test-version")
+
+	var wg sync.WaitGroup
+
+	// Concurrently set and unset the stats fetcher
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 50; i++ {
+			b.SetStatsFetcher(&stubStatsFetcher{})
+		}
+	}()
+
+	// Concurrently set and unset the initError function
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 50; i++ {
+			b.SetInitError(func() string { return "test error" })
+		}
+	}()
+
+	wg.Wait()
+
+	// Wait for the status loop to finish (ctx expires)
+	cancel()
+
+	// No panic / race = pass
+}
+
+// stubStatsFetcher implements StatsFetcher for broker tests.
+type stubStatsFetcher struct{}
+
+func (s *stubStatsFetcher) FetchStats(ctx context.Context) (*StatsEvent, error) {
+	return &StatsEvent{PendingObjects: 1}, nil
+}
+
+// Regression PR10: FetchStats must respect context cancellation. The
+// AdminStatsFetcher uses http.NewRequestWithContext, so a cancelled context
+// must abort the request promptly.
+func TestFetchStats_ContextCancellation(t *testing.T) {
+	// handler that blocks until the context is cancelled, simulating slow admin API
+	blockHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+		w.WriteHeader(http.StatusServiceUnavailable)
+	})
+
+	fetcher := &AdminStatsFetcher{AdminHandler: blockHandler}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	_, err := fetcher.FetchStats(ctx)
+	elapsed := time.Since(start)
+
+	// Should return promptly after context cancellation, not hang
+	assert.Less(t, elapsed, 2*time.Second, "FetchStats must not hang after context cancellation")
+	_ = err // error is expected (handler returned 503 or context cancelled)
+}
