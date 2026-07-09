@@ -7,6 +7,7 @@ import (
 
 	"github.com/SiaFoundation/s3d/sia"
 	"github.com/labstack/echo/v5"
+	"github.com/samber/lo"
 	"go.lumeweb.com/s3-server/internal/api"
 	"go.lumeweb.com/s3-server/internal/backend"
 	"go.lumeweb.com/s3-server/internal/status"
@@ -17,14 +18,13 @@ import (
 func (s *Services) listKeys(c *echo.Context) error {
 	keys := s.listAccessKeys()
 	resp := ListAccessKeysResponse{
-		Keys: make([]AccessKeyResponse, len(keys)),
-	}
-	for i, kp := range keys {
-		resp.Keys[i] = AccessKeyResponse{
-			AccessKey: kp.AccessKeyID,
-			UserName:  kp.UserName,
-			// SecretKey intentionally omitted — never expose after creation
-		}
+		Keys: lo.Map(keys, func(kp backend.AccessKeyInfo, _ int) AccessKeyResponse {
+			return AccessKeyResponse{
+				AccessKey: kp.AccessKeyID,
+				UserName:  kp.UserName,
+				// SecretKey intentionally omitted — never expose after creation
+			}
+		}),
 	}
 	return c.JSON(http.StatusOK, resp)
 }
@@ -67,11 +67,11 @@ func (s *Services) addKey(c *echo.Context) error {
 	}
 
 	// check for duplicate
-	for _, kp := range keys {
-		if kp.AccessKeyID == req.AccessKey {
-			s.keyMu.Unlock()
-			return api.SendConflict(c, api.TypeAccessKeyCreateFailed, "access key already exists")
-		}
+	if lo.SomeBy(keys, func(kp backend.AccessKeyInfo) bool {
+		return kp.AccessKeyID == req.AccessKey
+	}) {
+		s.keyMu.Unlock()
+		return api.SendConflict(c, api.TypeAccessKeyCreateFailed, "access key already exists")
 	}
 
 	targetUser := req.UserName
@@ -141,14 +141,9 @@ func (s *Services) deleteKey(c *echo.Context) error {
 		return api.SendInternal(c, api.TypeAccessKeyListFailed, "failed to list access keys", err)
 	}
 
-	found := false
-	for _, kp := range keys {
-		if kp.AccessKeyID == accessKey {
-			found = true
-			break
-		}
-	}
-	if !found {
+	if !lo.SomeBy(keys, func(kp backend.AccessKeyInfo) bool {
+		return kp.AccessKeyID == accessKey
+	}) {
 		s.keyMu.Unlock()
 		return api.SendNotFound(c, api.TypeAccessKeyNotFound, "access key not found")
 	}
@@ -271,13 +266,14 @@ func (s *Services) listUserKeys(c *echo.Context) error {
 	if err != nil {
 		return api.SendInternal(c, api.TypeAccessKeyListFailed, "failed to list access keys", err)
 	}
-	resp := ListAccessKeysResponse{Keys: make([]AccessKeyResponse, len(keys))}
-	for i, kp := range keys {
-		resp.Keys[i] = AccessKeyResponse{
-			AccessKey: kp.AccessKeyID,
-			UserName:  kp.UserName,
-			// SecretKey intentionally omitted — never expose after creation
-		}
+	resp := ListAccessKeysResponse{
+		Keys: lo.Map(keys, func(kp backend.AccessKeyInfo, _ int) AccessKeyResponse {
+			return AccessKeyResponse{
+				AccessKey: kp.AccessKeyID,
+				UserName:  kp.UserName,
+				// SecretKey intentionally omitted — never expose after creation
+			}
+		}),
 	}
 	return c.JSON(http.StatusOK, resp)
 }

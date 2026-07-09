@@ -68,6 +68,7 @@ require (
 	github.com/quic-go/webtransport-go v0.11.0 // indirect
 	github.com/rickb777/plural v1.4.10 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
+	github.com/samber/lo v1.53.0 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/vbatts/tar-split v0.12.2 // indirect

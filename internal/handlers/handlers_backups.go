@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v5"
+	"github.com/samber/lo"
 	"go.lumeweb.com/s3-server/internal/api"
 )
 
@@ -99,21 +100,20 @@ func (s *Services) listBackups(c *echo.Context) error {
 		return api.SendInternal(c, api.TypeBackupListFailed, "failed to list backups", err)
 	}
 
-	files := make([]BackupInfo, 0, len(entries))
-	for _, entry := range entries {
+	files := lo.FilterMap(entries, func(entry os.DirEntry, _ int) (BackupInfo, bool) {
 		if entry.IsDir() {
-			continue
+			return BackupInfo{}, false
 		}
 		info, err := entry.Info()
 		if err != nil {
-			continue
+			return BackupInfo{}, false
 		}
-		files = append(files, BackupInfo{
+		return BackupInfo{
 			Name:       info.Name(),
 			Size:       info.Size(),
 			ModifiedAt: info.ModTime(),
-		})
-	}
+		}, true
+	})
 	sort.Slice(files, func(i, j int) bool {
 		return files[i].ModifiedAt.After(files[j].ModifiedAt)
 	})
