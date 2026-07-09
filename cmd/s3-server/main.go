@@ -73,9 +73,9 @@ func serveCommand() *cli.Command {
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "data-dir",
-				Usage:   "Data directory for panel and s3d",
+				Usage:   "Data directory for panel config and S3 metadata storage",
 				EnvVars: []string{envVar("DATA_DIR")},
-				Value:   "/var/lib/s3d",
+				Value:   "/var/lib/s3-server",
 			},
 			&cli.StringFlag{
 				Name:    "listen-addr",
