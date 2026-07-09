@@ -85,11 +85,37 @@ Or manually:
 
 First run triggers the onboarding wizard at `http://localhost:8080`.
 
-### Docker
+### Docker — Production
+
+Uses the published image from GitHub Container Registry:
 
 ```bash
-docker compose up -d    # Builds and starts on port 8080
+docker compose up -d    # Pulls ghcr.io/lumeweb/s3-server:latest, starts on port 8080
 ```
+
+To pin a specific version:
+
+```yaml
+# docker-compose.yml override or env
+image: ghcr.io/lumeweb/s3-server:develop    # track develop branch
+image: ghcr.io/lumeweb/s3-server:sha-abc123 # specific commit
+```
+
+### Docker — Local Development
+
+Builds from source using the Dockerfile (multi-stage: bun frontend → Go build → runtime):
+
+```bash
+docker compose -f docker-compose.dev.yml up -d --build
+```
+
+CI publishes images to GHCR on every push to `develop`. The following tags are available:
+
+| Tag | Description |
+|---|---|
+| `latest` | Latest develop build |
+| `develop` | Same as latest, explicit |
+| `sha-<short>` | Specific commit hash |
 
 ## Configuration
 
@@ -164,14 +190,15 @@ make clean    # Remove binary, dist, generated templ/build files
 
 ## CI
 
-GitHub Actions runs 4 parallel jobs on every push to `develop` and every PR:
+GitHub Actions runs 5 jobs on every push to `develop` (4 on PRs):
 
 | Job | Description |
 |---|---|
 | **Backend** | CSS build → templ generate → go build → go vet → go test -race |
 | **Frontend** | bun install → vite build → tailwind CSS → vitest |
 | **Lint** | golangci-lint v2 + templ fmt check |
-| **Docker** | Multi-stage buildx build with GHA layer cache |
+| **Docker Build** | Multi-stage buildx build with GHA layer cache (PRs only, no push) |
+| **Publish** | Builds and pushes image to GHCR with `latest`, `develop`, and `sha-<short>` tags (develop pushes only) |
 
 ## Project Conventions
 

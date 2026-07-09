@@ -1,6 +1,11 @@
+# Local development — builds from source.
+# Usage: docker compose -f docker-compose.dev.yml up -d --build
 services:
   s3-server:
-    image: ghcr.io/lumeweb/s3-server:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: s3-server:dev
     container_name: s3-server
     restart: unless-stopped
     ports:
