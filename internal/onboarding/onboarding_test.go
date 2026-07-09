@@ -515,9 +515,9 @@ func TestOnboardingFlow_AdminThenKeys(t *testing.T) {
 	assert.True(t, init.initCalled)
 }
 
-// Regression: SetAppKeyHandler when SetOnboardingState fails — persist runs
-// before FSM transition, so on failure the FSM stays at StateAdminSet and
-// the sqliteStore is closed. Returns 500, not a misleading 200.
+// Regression: SetAppKeyHandler when SetOnboardingState fails — FSM transitions
+// first, then persist fails and rolls back the FSM to StateAdminSet.
+// sqliteStore is closed. Returns 500, not a misleading 200.
 func TestSetAppKeyHandler_PersistFailure_ReturnsError(t *testing.T) {
 	svc, mockStore, _, _ := newTestService(t, StateAdminSet)
 
@@ -538,7 +538,7 @@ func TestSetAppKeyHandler_PersistFailure_ReturnsError(t *testing.T) {
 	err := svc.SetAppKeyHandler(c)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
-	assert.Equal(t, StateAdminSet, svc.fsm.State(), "FSM must not advance on persist failure")
+	assert.Equal(t, StateAdminSet, svc.fsm.State(), "FSM must roll back to StateAdminSet on persist failure")
 	assert.Nil(t, svc.sqliteStore, "sqliteStore must be closed on persist failure")
 }
 

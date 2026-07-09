@@ -6,6 +6,7 @@ type StateMachine interface {
 	State() OnboardingState
 	CanTransition(target OnboardingState) bool
 	Transition(target OnboardingState) error
+	SetState(s OnboardingState)
 }
 
 // FSM is a minimal finite state machine for onboarding.
@@ -55,6 +56,13 @@ func (f *FSM) Transition(target OnboardingState) error {
 	}
 	f.state = target
 	return nil
+}
+
+// SetState forces the FSM to the given state without transition validation.
+// Used for rollback after a persist failure where the validated reverse
+// transition may not exist in the transition table.
+func (f *FSM) SetState(s OnboardingState) {
+	f.state = s
 }
 
 // errInvalidTransition is returned when a state transition is not allowed.
