@@ -193,6 +193,14 @@ templ Nav(activePage string, version string, csrfToken string) {
 				@navLink("monitoring", activePage, routes.PanelMonitoring, "Monitoring")
 				@navLink("settings", activePage, routes.PanelSettings, "Settings")
 				<div class="nav-sep"></div>
+				<button
+					type="button"
+					class="btn-ghost text-sm px-2 py-1"
+					title="Force-upload all buffered objects to the Sia network and pin them. This is a system-wide operation and does not delete any data."
+					@click="window.__sseAction && window.__sseAction('Flushing pending objects…', () => window.__api.post('/_panel/api/system/flush'), 'All pending objects flushed to the network')"
+				>
+					Flush
+				</button>
 				if version != "" {
 					<span class="text-sm text-muted-foreground font-display">v{ version }</span>
 				}

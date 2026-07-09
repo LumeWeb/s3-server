@@ -82,7 +82,7 @@ templ KeyRow(kp config.KeyPair) {
 			</div>
 			<div class="flex items-center gap-2">
 				<span class="text-[10px] font-body text-muted-foreground shrink-0 w-20">Secret Key</span>
-				<code class="font-display text-xs text-muted-foreground truncate">{ kp.SecretKey }</code>
+				<code class="font-display text-xs text-muted-foreground truncate">{ maskKey(kp.SecretKey) }</code>
 			</div>
 		</div>
 		<div class="flex items-center gap-1 shrink-0">
