@@ -50,7 +50,7 @@ watch:
 
 # Quick dev: build everything and run
 dev: css web generate build
-	$(BINARY) serve --listen-addr 0.0.0.0:8080 --data-dir /tmp/s3d-test-data
+	$(BINARY) serve --listen-addr 0.0.0.0:8080 --data-dir /tmp/s3-server-test-data
 
 # --- Testing ---
 
@@ -79,7 +79,7 @@ lint: vet
 
 clean:
 	rm -f $(BINARY)
-	rm -rf /tmp/s3d-test-data
+	rm -rf /tmp/s3-server-test-data
 	rm -rf internal/views/web/dist
 	rm -f internal/views/*_templ.go
 	rm -f internal/build/build_gen.go
