@@ -411,3 +411,88 @@ func TestManager_Restart_Concurrent(t *testing.T) {
 	assert.Equal(t, int32(4), initCount.Load())
 	assert.NotNil(t, m.Backend())
 }
+
+// Regression PR9: Restart failure must set initError so Status() reports Error.
+func TestManager_Restart_SetsInitErrorOnFailure(t *testing.T) {
+	m, st, factory, _ := newTestManager(t)
+
+	s3Cfg := config.S3Config{Directory: "/tmp/s3d", IndexerURL: "https://sia.storage"}
+	st.s3Cfg = s3Cfg
+
+	// First init succeeds
+	stubStore := &stubS3DStore{accessKeys: []AccessKeyInfo{{AccessKeyID: "AKIA123", SecretKey: testSecretKey, UserName: testUser}}}
+	factory.openDBFn = func(dbPath string) (S3DStore, error) { return stubStore, nil }
+	factory.initFn = func(ctx context.Context, cfg config.S3Config, store S3DStore) (Backend, http.Handler, func(), error) {
+		return &stubBackend{}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), func() {}, nil
+	}
+	require.NoError(t, m.InitFromConfig(context.Background()))
+	assert.Empty(t, m.InitError())
+
+	// Restart: OpenDatabase succeeds, but Init fails
+	factory.initFn = func(ctx context.Context, cfg config.S3Config, store S3DStore) (Backend, http.Handler, func(), error) {
+		return nil, nil, nil, assert.AnError
+	}
+
+	err := m.Restart(context.Background())
+	require.Error(t, err)
+	assert.NotEmpty(t, m.InitError(), "initError must be set after Restart failure")
+	assert.Equal(t, status.Error, m.Status())
+}
+
+// Regression PR9: Successful restart must clear stale initError.
+func TestManager_Restart_ClearsInitErrorOnSuccess(t *testing.T) {
+	m, st, factory, _ := newTestManager(t)
+
+	s3Cfg := config.S3Config{Directory: "/tmp/s3d", IndexerURL: "https://sia.storage"}
+	st.s3Cfg = s3Cfg
+
+	// First init fails — sets initError
+	stubStore := &stubS3DStore{accessKeys: []AccessKeyInfo{{AccessKeyID: "AKIA123", SecretKey: testSecretKey, UserName: testUser}}}
+	factory.openDBFn = func(dbPath string) (S3DStore, error) { return stubStore, nil }
+	factory.initFn = func(ctx context.Context, cfg config.S3Config, store S3DStore) (Backend, http.Handler, func(), error) {
+		return nil, nil, nil, assert.AnError
+	}
+	require.Error(t, m.InitFromConfig(context.Background()))
+	assert.NotEmpty(t, m.InitError())
+
+	// Restart: Init succeeds this time — initError should be cleared
+	factory.initFn = func(ctx context.Context, cfg config.S3Config, store S3DStore) (Backend, http.Handler, func(), error) {
+		return &stubBackend{}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), func() {}, nil
+	}
+	require.NoError(t, m.Restart(context.Background()))
+	assert.Empty(t, m.InitError(), "initError must be cleared after successful Restart")
+	assert.Equal(t, status.Running, m.Status())
+}
+
+// Regression PR9: Cleanup after Restart must not double-close the sqlite store.
+// The cleanup closure already closes the store, and Cleanup() must only call
+// it once.
+func TestManager_RestartThenCleanup_NoDoubleClose(t *testing.T) {
+	m, st, factory, _ := newTestManager(t)
+
+	s3Cfg := config.S3Config{Directory: "/tmp/s3d", IndexerURL: "https://sia.storage"}
+	st.s3Cfg = s3Cfg
+
+	stubStore := &stubS3DStore{accessKeys: []AccessKeyInfo{{AccessKeyID: "AKIA123", SecretKey: testSecretKey, UserName: testUser}}}
+	factory.openDBFn = func(dbPath string) (S3DStore, error) { return stubStore, nil }
+
+	var cleanupCount atomic.Int32
+	factory.initFn = func(ctx context.Context, cfg config.S3Config, store S3DStore) (Backend, http.Handler, func(), error) {
+		return &stubBackend{}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), func() {
+			cleanupCount.Add(1)
+		}, nil
+	}
+
+	// Initial init
+	require.NoError(t, m.InitFromConfig(context.Background()))
+
+	// Restart — old cleanup runs, new cleanup set
+	require.NoError(t, m.Restart(context.Background()))
+
+	// Old cleanup should have been called during Restart
+	assert.Equal(t, int32(1), cleanupCount.Load(), "old cleanup must be called during Restart")
+
+	// Final Cleanup — only new cleanup should run
+	m.Cleanup()
+	assert.Equal(t, int32(2), cleanupCount.Load(), "final cleanup must call the new cleanup closure exactly once")
+}

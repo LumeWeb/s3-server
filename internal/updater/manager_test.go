@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestManagerNotAvailable(t *testing.T) {
@@ -150,4 +152,15 @@ func TestStatus(t *testing.T) {
 	if len(status.UpdaterLog) != 2 {
 		t.Fatalf("expected 2 log lines, got %d", len(status.UpdaterLog))
 	}
+}
+
+// Regression PR6: EnableAutoUpdate, DisableAutoUpdate, and TriggerUpdate
+// must be no-ops (return nil) when /state is not available, rather than
+// calling os.MkdirAll and creating stray directories.
+func TestMutationNoOpWhenNotAvailable(t *testing.T) {
+	m := NewWithDir("/nonexistent/path/that/does/not/exist")
+
+	assert.NoError(t, m.EnableAutoUpdate(), "EnableAutoUpdate must be a no-op when not available")
+	assert.NoError(t, m.DisableAutoUpdate(), "DisableAutoUpdate must be a no-op when not available")
+	assert.NoError(t, m.TriggerUpdate(), "TriggerUpdate must be a no-op when not available")
 }
