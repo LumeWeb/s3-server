@@ -89,7 +89,7 @@ func BucketCreateMiddleware(next http.Handler, prov BucketCertProvisioner, hostB
 		rw := &statusCaptureWriter{ResponseWriter: w}
 		next.ServeHTTP(rw, r)
 
-		// Bucket created successfully — enqueue cert provisioning
+		// Bucket created successfully: enqueue cert provisioning
 		// Go's default status code is 200 if WriteHeader was never called.
 		if rw.status == http.StatusOK || rw.status == 0 {
 			if ctx.Err() != nil {

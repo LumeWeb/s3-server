@@ -9,8 +9,11 @@ packages:
   go.lumeweb.com/s3-server/internal/handlers:
     config:
       dir: ./internal/handlers/mocks
+      pkgname: handlersmocks
     interfaces:
       S3Swapper: {}
+      BackendRestarter: {}
+      SSEBroker: {}
   go.lumeweb.com/s3-server/internal/backend:
     config:
       dir: ./internal/backend/mocks
