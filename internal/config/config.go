@@ -2,9 +2,11 @@ package config
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"github.com/go-viper/mapstructure/v2"
@@ -51,11 +53,25 @@ type LogConfig struct {
 	Format string `koanf:"format" json:"format"`
 }
 
+type IndexerOption struct {
+	URL         string `koanf:"url" json:"url"`
+	Name        string `koanf:"name" json:"name"`
+	Description string `koanf:"description" json:"description"`
+	Logo        string `koanf:"logo" json:"logo,omitempty"`       // identifier: "pinner", "sia-storage", or empty for star
+	BrandColor  string `koanf:"brand_color" json:"brand_color,omitempty"`
+	// ContrastColor is computed from BrandColor using WCAG relative luminance.
+	// Returns "#000000" or "#FFFFFF": whichever has higher contrast against BrandColor.
+	// Omitted from config files (koanf:"-") and computed at load time.
+	ContrastColor string `koanf:"-" json:"contrast_color,omitempty"`
+}
+
 type S3Config struct {
-	Directory         string   `koanf:"directory" json:"directory"`
-	IndexerURL        string   `koanf:"indexer_url" json:"indexer_url"`
-	AvailableIndexers []string `koanf:"available_indexers" json:"available_indexers"`
-	HostBases         []string `koanf:"host_bases" json:"host_bases"`
+	Directory         string          `koanf:"directory" json:"directory"`
+	IndexerURL        string          `koanf:"indexer_url" json:"indexer_url"`
+	AvailableIndexers []IndexerOption `koanf:"available_indexers" json:"available_indexers"`
+	HostBases         []string        `koanf:"host_bases" json:"host_bases"`
+	DiskUsageLimit    uint64          `koanf:"disk_usage_limit" json:"disk_usage_limit"`
+	UploadWastePct    float64         `koanf:"upload_waste_pct" json:"upload_waste_pct"`
 }
 
 type PanelConfig struct {
@@ -114,21 +130,95 @@ func ResolveS3Directory(configuredDir, dataDir string) string {
 }
 
 func DefaultConfig() PanelConfig {
-	return PanelConfig{
+	cfg := PanelConfig{
 		OnboardingState: DefaultOnboardingState,
 		SSL: SSLConfig{
 			Mode: SSLModeNone,
 		},
 		S3: S3Config{
 			Directory:         "/var/lib/s3-server",
-			IndexerURL:       "https://sia.pinner.xyz",
-			AvailableIndexers: []string{"https://sia.pinner.xyz", "https://sia.storage"},
+			IndexerURL: "https://sia.pinner.xyz",
+			AvailableIndexers: []IndexerOption{
+				{URL: "https://sia.pinner.xyz", Name: "Pinner", Description: "Our indexer, our support", Logo: "pinner", BrandColor: "#12A596"},
+				{URL: "https://sia.storage", Name: "Sia Storage", Description: "Are you already using Sia Storage? Connect here.", Logo: "sia-storage", BrandColor: "#EFF2ED"},
+			},
+			// DefaultUploadWastePct from s3d (sia.DefaultUploadWastePct = 0.1):
+			// maximum percentage of wasted space tolerated per slab before
+			// objects are uploaded. Lower = faster uploads, more waste.
+			// Higher = slower uploads, less waste.
+			UploadWastePct: 0.1,
 		},
 		Log: LogConfig{
 			Level:  "info",
 			Format: "json",
 		},
 	}
+	computeIndexerContrastColors(cfg.S3.AvailableIndexers)
+	return cfg
+}
+
+// computeIndexerContrastColors computes ContrastColor for each indexer option
+// based on WCAG 2.1 relative luminance. The color with the higher contrast
+// ratio against BrandColor is chosen (black or white).
+func computeIndexerContrastColors(indexers []IndexerOption) {
+	for i := range indexers {
+		indexers[i].ContrastColor = contrastColor(indexers[i].BrandColor)
+	}
+}
+
+// contrastColor returns "#000000" or "#FFFFFF": whichever has higher WCAG 2.1
+// contrast ratio against the given hex color string (e.g. "#12A596").
+func contrastColor(hexStr string) string {
+	r, g, b, ok := parseHexColor(hexStr)
+	if !ok {
+		return "#000000"
+	}
+	l := relativeLuminance(r, g, b)
+	// Contrast ratio of white against bg = (1.0 + 0.05) / (l + 0.05)
+	// Contrast ratio of black against bg = (l + 0.05) / (0.0 + 0.05)
+	whiteRatio := 1.05 / (l + 0.05)
+	blackRatio := (l + 0.05) / 0.05
+	if blackRatio >= whiteRatio {
+		return "#000000"
+	}
+	return "#FFFFFF"
+}
+
+// relativeLuminance computes the WCAG 2.1 relative luminance of an sRGB color.
+func relativeLuminance(r, g, b uint8) float64 {
+	ri := linearizeSRGB(float64(r) / 255.0)
+	gi := linearizeSRGB(float64(g) / 255.0)
+	bi := linearizeSRGB(float64(b) / 255.0)
+	return 0.2126*ri + 0.7152*gi + 0.0722*bi
+}
+
+// linearizeSRGB converts an sRGB channel value [0,1] to linear RGB.
+func linearizeSRGB(c float64) float64 {
+	if c <= 0.04045 {
+		return c / 12.92
+	}
+	return math.Pow((c+0.055)/1.055, 2.4)
+}
+
+// parseHexColor parses "#RRGGBB" into r, g, b. Returns ok=false on failure.
+func parseHexColor(s string) (r, g, b uint8, ok bool) {
+	s = strings.TrimPrefix(s, "#")
+	if len(s) != 6 {
+		return 0, 0, 0, false
+	}
+	ri, err := strconv.ParseUint(s[0:2], 16, 8)
+	if err != nil {
+		return 0, 0, 0, false
+	}
+	gi, err := strconv.ParseUint(s[2:4], 16, 8)
+	if err != nil {
+		return 0, 0, 0, false
+	}
+	bi, err := strconv.ParseUint(s[4:6], 16, 8)
+	if err != nil {
+		return 0, 0, 0, false
+	}
+	return uint8(ri), uint8(gi), uint8(bi), true
 }
 
 func ConfigPath(dataDir string) string {
@@ -153,7 +243,7 @@ func Load(path string) (PanelConfig, error) {
 		return defaults, fmt.Errorf("failed to stat config file: %w", err)
 	}
 
-	// load env overrides — S3_SERVER_ prefix maps to config keys
+	// load env overrides: S3_SERVER_ prefix maps to config keys
 	if err := k.Load(env.Provider(EnvPrefix, Delimiter, func(key string) string {
 		return strings.ReplaceAll(
 			strings.ToLower(strings.TrimPrefix(key, EnvPrefix)),
@@ -177,6 +267,9 @@ func Load(path string) (PanelConfig, error) {
 	}); err != nil {
 		return defaults, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
+
+	// Compute derived fields that aren't in config files.
+	computeIndexerContrastColors(cfg.S3.AvailableIndexers)
 
 	return cfg, nil
 }
@@ -227,7 +320,10 @@ func Save(path string, cfg PanelConfig) error {
 	return os.Rename(tmp, path)
 }
 
-func BuildLogger(cfg LogConfig) (*zap.Logger, error) {
+// BuildLogger creates a zap.Logger from LogConfig. It returns the
+// AtomicLevel so callers can hot-reload the log level at runtime without
+// restarting the process (e.g. via the settings UI).
+func BuildLogger(cfg LogConfig) (*zap.Logger, zap.AtomicLevel, error) {
 	level := zap.NewAtomicLevelAt(zapcore.InfoLevel)
 	if parsed, err := zapcore.ParseLevel(cfg.Level); err == nil {
 		level = zap.NewAtomicLevelAt(parsed)
@@ -245,5 +341,5 @@ func BuildLogger(cfg LogConfig) (*zap.Logger, error) {
 		encoder = zapcore.NewJSONEncoder(encoderCfg)
 	}
 
-	return zap.New(zapcore.NewCore(encoder, zapcore.Lock(os.Stdout), level)), nil
+	return zap.New(zapcore.NewCore(encoder, zapcore.Lock(os.Stdout), level)), level, nil
 }
