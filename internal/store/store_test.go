@@ -74,7 +74,7 @@ func TestStore_ClearAdminPassword(t *testing.T) {
 	err = s.ClearAdminPassword()
 	require.NoError(t, err)
 
-	// Hash should be empty — no password should validate
+	// Hash should be empty: no password should validate
 	assert.False(t, s.ValidateAdminPassword("testpass123"))
 	assert.False(t, s.ValidateAdminPassword(""))
 	assert.False(t, s.ValidateAdminPassword("anything"))
@@ -87,7 +87,7 @@ func TestStore_ClearAdminPassword(t *testing.T) {
 func TestStore_ValidateAdminPassword_EmptyHash(t *testing.T) {
 	s, _ := newTestStore(t)
 
-	// No password set — nothing should validate
+	// No password set: nothing should validate
 	assert.False(t, s.ValidateAdminPassword(""))
 	assert.False(t, s.ValidateAdminPassword("somepass"))
 }
@@ -212,7 +212,7 @@ func TestStore_PersistsAcrossInstances(t *testing.T) {
 	err = s1.SetOnboardingState("complete")
 	require.NoError(t, err)
 
-	// Create new store from same path — data should persist
+	// Create new store from same path: data should persist
 	s2, err := New(cfgPath)
 	require.NoError(t, err)
 
@@ -221,7 +221,7 @@ func TestStore_PersistsAcrossInstances(t *testing.T) {
 }
 
 func TestMemorySessionManager_Create(t *testing.T) {
-	sm := NewMemorySessionManager(0) // zero TTL — immediately expired
+	sm := NewMemorySessionManager(0) // zero TTL: immediately expired
 	token, err := sm.Create()
 	require.NoError(t, err)
 	assert.NotEmpty(t, token)

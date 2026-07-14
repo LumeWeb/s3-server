@@ -10,22 +10,23 @@ import (
 	"go.lumeweb.com/s3-server/internal/api"
 	"go.lumeweb.com/s3-server/internal/config"
 	"go.lumeweb.com/s3-server/internal/status"
-	"go.uber.org/zap"
 )
 
 func (s *Services) getS3Config(c *echo.Context) error {
 	cfg := s.store.S3Config()
 	return c.JSON(http.StatusOK, S3ConfigResponse{
-		Directory:         cfg.Directory,
-		IndexerURL:        cfg.IndexerURL,
-		AvailableIndexers: cfg.AvailableIndexers,
-		HostBases:         cfg.HostBases,
+		Directory:          cfg.Directory,
+		IndexerURL:         cfg.IndexerURL,
+		AvailableIndexers:  cfg.AvailableIndexers,
+		HostBases:          cfg.HostBases,
+		DiskUsageLimit:     cfg.DiskUsageLimit,
+		UploadWastePct:     cfg.UploadWastePct,
 	})
 }
 
 func (s *Services) setS3Config(c *echo.Context) error {
 	var req SetS3ConfigRequest
-	if err := bindJSON(c, &req); err != nil {
+	if err := bindJSON(c, s.log, &req); err != nil {
 		return err
 	}
 
@@ -36,31 +37,26 @@ func (s *Services) setS3Config(c *echo.Context) error {
 		return api.SendValidation(c, api.TypeIndexerURLRequired, "indexer_url is required")
 	}
 
-	// Indexer cannot be changed after onboarding — requires data migration.
+	// Indexer cannot be changed after onboarding: requires data migration.
 	current := s.store.S3Config()
 	if current.IndexerURL != "" && current.IndexerURL != req.IndexerURL {
 		return api.SendValidation(c, api.TypeIndexerLocked, "indexer cannot be changed after initial setup. Changing the indexer requires migrating existing data.")
 	}
 
 	if err := s.store.SetS3Config(config.S3Config{
-		Directory:         req.Directory,
-		IndexerURL:        req.IndexerURL,
-		AvailableIndexers: req.AvailableIndexers,
-		HostBases:         req.HostBases,
+		Directory:          req.Directory,
+		IndexerURL:         req.IndexerURL,
+		AvailableIndexers:  req.AvailableIndexers,
+		HostBases:          req.HostBases,
+		DiskUsageLimit:     req.DiskUsageLimit,
+		UploadWastePct:     req.UploadWastePct,
 	}); err != nil {
 		return api.SendInternal(c, api.TypeS3ConfigSaveFailed, "failed to save S3 config", err)
 	}
 
-	// S3 config change requires backend restart
-	if s.restarter != nil {
-		if err := s.restarter.Restart(c.Request().Context()); err != nil {
-			s.log.Error("failed to restart backend after S3 config change", zap.Error(err))
-		}
-	}
-
 	return c.JSON(http.StatusOK, ConfigUpdateResponse{
 		Status:  "updated",
-		Message: "S3 configuration updated. Backend restarting.",
+		Message: "S3 configuration saved. Backend restart required for changes to take effect.",
 	})
 }
 
@@ -75,7 +71,7 @@ func (s *Services) getSSLConfig(c *echo.Context) error {
 
 func (s *Services) setSSLConfig(c *echo.Context) error {
 	var req SetSSLConfigRequest
-	if err := bindJSON(c, &req); err != nil {
+	if err := bindJSON(c, s.log, &req); err != nil {
 		return err
 	}
 
@@ -99,18 +95,66 @@ func (s *Services) setSSLConfig(c *echo.Context) error {
 		return api.SendInternal(c, api.TypeSSLConfigSaveFailed, "failed to save SSL config", err)
 	}
 
-	// SSL config change requires server restart — signal the process
+	// SSL config change requires server restart: signal the process
 	// The caller should display a message that the server will restart.
 	return c.JSON(http.StatusOK, ConfigUpdateResponse{
 		Status:  "updated",
-		Message: "SSL configuration updated. Server restart required for changes to take effect.",
+		Message: "SSL configuration saved. Server restart required for changes to take effect.",
+	})
+}
+
+func (s *Services) getLogConfig(c *echo.Context) error {
+	cfg := s.store.LogConfig()
+	return c.JSON(http.StatusOK, LogConfigResponse{
+		Level:  cfg.Level,
+		Format: cfg.Format,
+	})
+}
+
+func (s *Services) setLogConfig(c *echo.Context) error {
+	var req SetLogConfigRequest
+	if err := bindJSON(c, s.log, &req); err != nil {
+		return err
+	}
+
+	if req.Level == "" {
+		return api.SendValidation(c, "LOG_LEVEL_REQUIRED", "log level is required")
+	}
+	// Validate level is a valid zap level
+	validLevels := map[string]bool{
+		"debug": true, "info": true, "warn": true, "error": true,
+	}
+	if !validLevels[req.Level] {
+		return api.SendValidation(c, "LOG_LEVEL_INVALID", "log level must be debug, info, warn, or error")
+	}
+
+	if req.Format != "" && req.Format != "json" && req.Format != "human" {
+		return api.SendValidation(c, "LOG_FORMAT_INVALID", "log format must be json or human")
+	}
+
+	logCfg := config.LogConfig{
+		Level:  req.Level,
+		Format: req.Format,
+	}
+	if err := s.store.SetLogConfig(logCfg); err != nil {
+		return api.SendInternal(c, api.TypeLogConfigSaveFailed, "failed to save log config", err)
+	}
+
+	// Hot-reload the log level if the updater is wired.
+	if s.logLevelUpdater != nil {
+		s.logLevelUpdater.SetLevel(logCfg)
+	}
+
+	return c.JSON(http.StatusOK, ConfigUpdateResponse{
+		Status:  "updated",
+		Message: "Log configuration saved and applied.",
 	})
 }
 
 // systemFlush forces immediate upload of all pending (buffered locally) objects
 // to the Sia network, bypassing the normal batching/padding efficiency threshold,
 // then pins the uploaded objects so their local backup files can be removed.
-// This is a system-wide operation — it affects all objects across all buckets,
+// This is a system-wide operation: it affects all objects across all buckets,
 // not a specific bucket. It does NOT delete any data.
 func (s *Services) systemFlush(c *echo.Context) error {
 	b, err := s.requireBackendOnly(c)
@@ -141,7 +185,7 @@ func (s *Services) changePassword(c *echo.Context) error {
 		CurrentPassword string `json:"current_password"`
 		NewPassword     string `json:"new_password"`
 	}
-	if err := bindJSON(c, &req); err != nil {
+	if err := bindJSON(c, s.log, &req); err != nil {
 		return err
 	}
 	if req.CurrentPassword == "" {

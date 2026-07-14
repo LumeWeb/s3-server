@@ -6,12 +6,14 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/SiaFoundation/s3d/s3"
 	"go.lumeweb.com/s3-server/internal/config"
 	"go.lumeweb.com/s3-server/internal/status"
 	"go.lumeweb.com/s3-server/internal/store"
 	"go.sia.tech/core/types"
+	sdk "go.sia.tech/siastorage"
 	"go.uber.org/zap"
 )
 
@@ -21,6 +23,11 @@ type Backend interface {
 	Close() error
 
 	ListBuckets(ctx context.Context, accessKeyID string) ([]s3.BucketInfo, error)
+	ListAllBuckets(ctx context.Context) ([]BucketInfo, error)
+	BucketStats(ctx context.Context, bucketName string) (count int, size int64, err error)
+	BucketOwner(ctx context.Context, bucketName string) (owner string, err error)
+	BucketVersioning(ctx context.Context, bucketName string) (status string, err error)
+	BucketCountForUser(ctx context.Context, userName string) (int, error)
 	CreateBucket(ctx context.Context, accessKeyID, name string) error
 	DeleteBucket(ctx context.Context, accessKeyID, name string) error
 	FlushObjects(ctx context.Context) error
@@ -53,6 +60,14 @@ type AccessKeyInfo struct {
 	UserName    string
 }
 
+// BucketInfo is a bucket with its owner name, for admin-panel listings
+// that span all users.
+type BucketInfo struct {
+	Name      string
+	Owner     string
+	CreatedAt time.Time
+}
+
 // S3Swapper is the interface for a thread-safe swappable http.Handler.
 type S3Swapper interface {
 	Swap(handler http.Handler)
@@ -76,6 +91,7 @@ type Manager struct {
 	backend     Backend
 	sqliteStore S3DStore
 	cleanup     func()
+	accountCli  AccountClient
 	initError   string // non-empty when InitFromConfig failed at startup
 
 	restartMu sync.Mutex // serializes concurrent Restart calls
@@ -101,7 +117,7 @@ func (m *Manager) InitFromConfig(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}
-
+	// I/O outside the lock
 	backend, s3Handler, cleanup, err := m.factory.Init(ctx, s3Cfg, sqliteStore)
 	if err != nil {
 		if closeErr := sqliteStore.Close(); closeErr != nil {
@@ -113,11 +129,20 @@ func (m *Manager) InitFromConfig(ctx context.Context) error {
 		return fmt.Errorf("failed to init s3d backend: %w", err)
 	}
 
+	// Build the account client alongside the backend. Non-fatal: if it
+	// fails, we log and continue with a noop client.
+	accountCli, err := newAccountClient(sqliteStore, s3Cfg, m.log)
+	if err != nil {
+		m.log.Warn("failed to create account client, using noop", zap.Error(err))
+		accountCli = NewNoopAccountClient(m.log)
+	}
+
 	// Lock only to swap pointers
 	m.mu.Lock()
 	m.backend = backend
 	m.sqliteStore = sqliteStore
 	m.cleanup = cleanup
+	m.accountCli = accountCli
 	m.initError = "" // clear on successful init
 	m.mu.Unlock()
 
@@ -145,11 +170,19 @@ func (m *Manager) InitAfterOnboarding(ctx context.Context, sqliteStore S3DStore)
 		return err
 	}
 
+	// Build the account client alongside the backend. Non-fatal.
+	accountCli, err := newAccountClient(sqliteStore, s3Cfg, m.log)
+	if err != nil {
+		m.log.Warn("failed to create account client, using noop", zap.Error(err))
+		accountCli = NewNoopAccountClient(m.log)
+	}
+
 	// Lock only to swap pointers
 	m.mu.Lock()
 	m.backend = backend
 	m.sqliteStore = sqliteStore
 	m.cleanup = cleanup
+	m.accountCli = accountCli
 	m.initError = "" // clear any stale error from a previous failed init
 	m.mu.Unlock()
 
@@ -163,6 +196,43 @@ func (m *Manager) OpenDatabase(dbPath string) (S3DStore, error) {
 	return m.factory.OpenDatabase(dbPath)
 }
 
+// AccountClient returns the current account client, or nil if not initialized.
+func (m *Manager) AccountClient() AccountClient {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.accountCli
+}
+
+// newAccountClient builds an AccountClient from the app key and indexer URL
+// stored in the SQLite store. Returns a noop client if the app key is not set
+// or the indexer URL is empty.
+func newAccountClient(sqliteStore S3DStore, s3Cfg config.S3Config, log *zap.Logger) (AccountClient, error) {
+	appKey, indexerURL, err := sqliteStore.AppKey()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get app key: %w", err)
+	}
+	if len(appKey) == 0 {
+		return NewNoopAccountClient(log), nil
+	}
+	if indexerURL == "" {
+		indexerURL = s3Cfg.IndexerURL
+	}
+	if indexerURL == "" {
+		return NewNoopAccountClient(log), nil
+	}
+
+	builder := sdk.NewBuilder(indexerURL, sdk.AppMetadata{
+		ID:          types.HashBytes([]byte("s3d")),
+		Name:        "s3-server-panel",
+		Description: "S3 Server panel account monitoring",
+	})
+	sdkClient, err := builder.SDK(appKey, sdk.WithLogger(log.Named("account")))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create account SDK client: %w", err)
+	}
+	return NewAccountClient(sdkClient), nil
+}
+
 // KeyStore returns the current s3d SQLite store, or nil if the backend is not initialized.
 func (m *Manager) KeyStore() S3DStore {
 	m.mu.RLock()
@@ -174,14 +244,21 @@ func (m *Manager) KeyStore() S3DStore {
 func (m *Manager) Cleanup() {
 	m.mu.Lock()
 	cleanup := m.cleanup
+	accountCli := m.accountCli
 	m.cleanup = nil
 	m.sqliteStore = nil
 	m.backend = nil
+	m.accountCli = nil
 	m.mu.Unlock()
 
-	// I/O outside the lock — cleanup closure already closes the sqlite store
+	// I/O outside the lock: cleanup closure already closes the sqlite store
 	if cleanup != nil {
 		cleanup()
+	}
+	if accountCli != nil {
+		if err := accountCli.Close(); err != nil {
+			m.log.Error("failed to close account client", zap.Error(err))
+		}
 	}
 }
 
@@ -196,14 +273,21 @@ func (m *Manager) Restart(ctx context.Context) error {
 	// Grab current resources under lock, nil out the fields
 	m.mu.Lock()
 	cleanup := m.cleanup
+	oldAccountCli := m.accountCli
 	m.cleanup = nil
 	m.sqliteStore = nil
 	m.backend = nil
+	m.accountCli = nil
 	m.mu.Unlock()
 
-	// I/O outside the lock — cleanup closure already closes the sqlite store
+	// I/O outside the lock: cleanup closure already closes the sqlite store
 	if cleanup != nil {
 		cleanup()
+	}
+	if oldAccountCli != nil {
+		if err := oldAccountCli.Close(); err != nil {
+			m.log.Error("failed to close account client during restart", zap.Error(err))
+		}
 	}
 
 	// Swap S3 handler to 503 placeholder during restart
@@ -212,7 +296,7 @@ func (m *Manager) Restart(ctx context.Context) error {
 		w.Write([]byte("s3-server restarting...")) //nolint:errcheck
 	}))
 
-	// I/O outside the lock — re-initialize
+	// I/O outside the lock: re-initialize
 	s3Cfg := m.store.S3Config()
 
 	newSqliteStore, err := m.factory.OpenDatabase(s3Cfg.Directory + "/s3d.db")
@@ -234,11 +318,19 @@ func (m *Manager) Restart(ctx context.Context) error {
 		return fmt.Errorf("failed to restart backend: %w", err)
 	}
 
+	// Rebuild the account client with the new store.
+	accountCli, err := newAccountClient(newSqliteStore, s3Cfg, m.log)
+	if err != nil {
+		m.log.Warn("failed to create account client during restart, using noop", zap.Error(err))
+		accountCli = NewNoopAccountClient(m.log)
+	}
+
 	// Lock only to swap pointers
 	m.mu.Lock()
 	m.backend = backend
 	m.sqliteStore = newSqliteStore
 	m.cleanup = newCleanup
+	m.accountCli = accountCli
 	m.initError = "" // clear any stale error from a previous failed init
 	m.mu.Unlock()
 

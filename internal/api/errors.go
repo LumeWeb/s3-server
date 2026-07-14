@@ -28,12 +28,12 @@ const (
 
 // ErrorType is a stable error subtype identifier. The frontend uses these
 // to look up human-readable messages via a JS map. Add new types here as
-// needed — they are intentionally separate from the broad ErrorCode so a
+// needed: they are intentionally separate from the broad ErrorCode so a
 // single code (e.g. INTERNAL_ERROR) can carry multiple specific types.
 type ErrorType string
 
 const (
-	// — Internal errors —
+	// Internal errors
 	TypeDatabaseOpenFailed    ErrorType = "DATABASE_OPEN_FAILED"
 	TypeDatabaseStoreFailed   ErrorType = "DATABASE_STORE_FAILED"
 	TypeSQLiteNotInitialized  ErrorType = "SQLITE_NOT_INITIALIZED"
@@ -41,6 +41,7 @@ const (
 	TypeBackendInitFailed     ErrorType = "BACKEND_INIT_FAILED"
 	TypeS3ConfigSaveFailed    ErrorType = "S3_CONFIG_SAVE_FAILED"
 	TypeSSLConfigSaveFailed  ErrorType = "SSL_CONFIG_SAVE_FAILED"
+	TypeLogConfigSaveFailed   ErrorType = "LOG_CONFIG_SAVE_FAILED"
 	TypePasswordSetFailed     ErrorType = "PASSWORD_SET_FAILED"
 	TypeConflict              ErrorType = "CONFLICT"
 	TypeUserCreateFailed     ErrorType = "USER_CREATE_FAILED"
@@ -66,7 +67,7 @@ const (
 	TypeBackupDirCreateFailed ErrorType = "BACKUP_DIR_CREATE_FAILED"
 	TypeBackupPathCheckFailed ErrorType = "BACKUP_PATH_CHECK_FAILED"
 
-	// — Validation / bad request —
+	// Validation / bad request
 	TypeInvalidRequestBody    ErrorType = "INVALID_REQUEST_BODY"
 	TypePasswordTooShort      ErrorType = "PASSWORD_TOO_SHORT"
 	TypeAccessKeyMissing      ErrorType = "ACCESS_KEY_MISSING"
@@ -84,12 +85,11 @@ const (
 	TypeBackupNotFound        ErrorType = "BACKUP_NOT_FOUND"
 	TypeAccessKeyNotFound     ErrorType = "ACCESS_KEY_NOT_FOUND"
 	TypeCannotDeleteLastKey   ErrorType = "CANNOT_DELETE_LAST_KEY"
-	TypeCannotDeleteDefaultUser ErrorType = "CANNOT_DELETE_DEFAULT_USER"
 	TypeRuleStatusInvalid     ErrorType = "RULE_STATUS_INVALID"
 	TypeExpirationDaysInvalid ErrorType = "EXPIRATION_DAYS_INVALID"
 	TypeAtLeastOneKeyRequired ErrorType = "AT_LEAST_ONE_KEY_REQUIRED"
 
-	// — Onboarding flow —
+	// Onboarding flow
 	TypeOnboardingComplete    ErrorType = "ONBOARDING_COMPLETE"
 	TypeOnboardingRequired    ErrorType = "ONBOARDING_REQUIRED"
 	TypeOnboardingResetFailed  ErrorType = "ONBOARDING_RESET_FAILED"
@@ -102,7 +102,7 @@ const (
 	TypeDataDirectoryNotConfigured ErrorType = "DATA_DIRECTORY_NOT_CONFIGURED"
 	TypeAdminHandlerNotConfigured  ErrorType = "ADMIN_HANDLER_NOT_CONFIGURED"
 
-	// — Auth —
+	// Auth
 	TypeAuthRequired          ErrorType = "AUTH_REQUIRED"
 	TypePasswordRequired      ErrorType = "PASSWORD_REQUIRED"
 	TypePasswordIncorrect     ErrorType = "PASSWORD_INCORRECT"
@@ -110,7 +110,7 @@ const (
 	TypeResetTokenNotFound    ErrorType = "RESET_TOKEN_NOT_FOUND"
 	TypeResetTokenExpired     ErrorType = "RESET_TOKEN_EXPIRED"
 
-	// — Update / sidecar —
+	// Update / sidecar
 	TypeUpdateNotAvailable ErrorType = "UPDATE_NOT_AVAILABLE"
 	TypeUpdateToggleFailed ErrorType = "UPDATE_TOGGLE_FAILED"
 	TypeUpdateTriggerFailed ErrorType = "UPDATE_TRIGGER_FAILED"

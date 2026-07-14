@@ -93,6 +93,21 @@ func (b *stubBackend) S3Backend() s3.Backend { return nil }
 func (b *stubBackend) ListBuckets(ctx context.Context, accessKeyID string) ([]s3.BucketInfo, error) {
 	return nil, nil
 }
+func (b *stubBackend) ListAllBuckets(ctx context.Context) ([]BucketInfo, error) {
+	return nil, nil
+}
+func (b *stubBackend) BucketStats(ctx context.Context, bucketName string) (int, int64, error) {
+	return 0, 0, nil
+}
+func (b *stubBackend) BucketOwner(ctx context.Context, bucketName string) (string, error) {
+	return "", nil
+}
+func (b *stubBackend) BucketVersioning(ctx context.Context, bucketName string) (string, error) {
+	return "", nil
+}
+func (b *stubBackend) BucketCountForUser(ctx context.Context, userName string) (int, error) {
+	return 0, nil
+}
 func (b *stubBackend) CreateBucket(ctx context.Context, accessKeyID, name string) error { return nil }
 func (b *stubBackend) DeleteBucket(ctx context.Context, accessKeyID, name string) error { return nil }
 func (b *stubBackend) FlushObjects(ctx context.Context) error { return nil }
@@ -145,6 +160,8 @@ func (s *stubStore) SetOnboardingState(string) error              { return nil }
 func (s *stubStore) SSLConfig() config.SSLConfig                  { return config.SSLConfig{} }
 func (s *stubStore) SetSSLConfig(config.SSLConfig) error          { return nil }
 func (s *stubStore) SetS3Config(config.S3Config) error            { return nil }
+func (s *stubStore) LogConfig() config.LogConfig                  { return config.LogConfig{Level: "info", Format: "json"} }
+func (s *stubStore) SetLogConfig(config.LogConfig) error          { return nil }
 func (s *stubStore) CreateSession() (string, error)               { return "stub-session", nil }
 func (s *stubStore) ValidateSession(string) bool                  { return true }
 func (s *stubStore) DeleteSession(string)                         {}
@@ -195,7 +212,9 @@ func TestManager_InitFromConfig(t *testing.T) {
 	assert.Equal(t, status.Running, m.Status())
 	assert.NotNil(t, swapper.handler) // S3 handler was swapped
 
-	_ = cleanupCalled // used in other tests
+	// Verify cleanup was wired correctly
+	m.Cleanup()
+	assert.True(t, cleanupCalled, "cleanup should have been called")
 }
 
 func TestManager_InitFromConfig_OpenDatabaseError(t *testing.T) {
@@ -374,7 +393,10 @@ func TestManager_Restart(t *testing.T) {
 	assert.True(t, cleanup1Called, "old cleanup should have been called")
 	assert.Equal(t, stubBack2, m.Backend())
 	assert.NotNil(t, swapper.handler)
-	_ = cleanup2Called
+
+	// Verify new cleanup was wired
+	m.Cleanup()
+	assert.True(t, cleanup2Called, "new cleanup should have been called")
 }
 
 func TestManager_Restart_Concurrent(t *testing.T) {
@@ -396,7 +418,7 @@ func TestManager_Restart_Concurrent(t *testing.T) {
 	err := m.InitFromConfig(context.Background())
 	require.NoError(t, err)
 
-	// concurrent restarts — only one should win the lock at a time
+	// concurrent restarts: only one should win the lock at a time
 	done := make(chan error, 3)
 	for i := 0; i < 3; i++ {
 		go func() {
@@ -446,7 +468,7 @@ func TestManager_Restart_ClearsInitErrorOnSuccess(t *testing.T) {
 	s3Cfg := config.S3Config{Directory: "/tmp/s3d", IndexerURL: "https://sia.storage"}
 	st.s3Cfg = s3Cfg
 
-	// First init fails — sets initError
+	// First init fails: sets initError
 	stubStore := &stubS3DStore{accessKeys: []AccessKeyInfo{{AccessKeyID: "AKIA123", SecretKey: testSecretKey, UserName: testUser}}}
 	factory.openDBFn = func(dbPath string) (S3DStore, error) { return stubStore, nil }
 	factory.initFn = func(ctx context.Context, cfg config.S3Config, store S3DStore) (Backend, http.Handler, func(), error) {
@@ -455,7 +477,7 @@ func TestManager_Restart_ClearsInitErrorOnSuccess(t *testing.T) {
 	require.Error(t, m.InitFromConfig(context.Background()))
 	assert.NotEmpty(t, m.InitError())
 
-	// Restart: Init succeeds this time — initError should be cleared
+	// Restart: Init succeeds this time: initError should be cleared
 	factory.initFn = func(ctx context.Context, cfg config.S3Config, store S3DStore) (Backend, http.Handler, func(), error) {
 		return &stubBackend{}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), func() {}, nil
 	}
@@ -486,13 +508,13 @@ func TestManager_RestartThenCleanup_NoDoubleClose(t *testing.T) {
 	// Initial init
 	require.NoError(t, m.InitFromConfig(context.Background()))
 
-	// Restart — old cleanup runs, new cleanup set
+	// Restart: old cleanup runs, new cleanup set
 	require.NoError(t, m.Restart(context.Background()))
 
 	// Old cleanup should have been called during Restart
 	assert.Equal(t, int32(1), cleanupCount.Load(), "old cleanup must be called during Restart")
 
-	// Final Cleanup — only new cleanup should run
+	// Final Cleanup: only new cleanup should run
 	m.Cleanup()
 	assert.Equal(t, int32(2), cleanupCount.Load(), "final cleanup must call the new cleanup closure exactly once")
 }

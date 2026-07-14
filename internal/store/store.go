@@ -30,6 +30,8 @@ type Store interface {
 	SetSSLConfig(cfg config.SSLConfig) error
 	S3Config() config.S3Config
 	SetS3Config(cfg config.S3Config) error
+	LogConfig() config.LogConfig
+	SetLogConfig(cfg config.LogConfig) error
 	CreateSession() (string, error)
 	ValidateSession(token string) bool
 	DeleteSession(token string)
@@ -94,7 +96,7 @@ func (s *fileStore) SetAdminPassword(password string) error {
 // This is used during password reset flows to ensure no password is valid
 // until a new one is explicitly set. Using SetAdminPassword("") would
 // generate a hash of the empty string, which bcrypt would match on empty
-// input — a critical bypass.
+// input: a critical bypass.
 func (s *fileStore) ClearAdminPassword() error {
 	s.mu.Lock()
 	old := s.config.AdminPasswordHash
@@ -195,6 +197,25 @@ func (s *fileStore) SetS3Config(cfg config.S3Config) error {
 	s.config.S3 = cfg
 	if err := s.save(); err != nil {
 		s.config.S3 = old
+		s.mu.Unlock()
+		return err
+	}
+	s.mu.Unlock()
+	return nil
+}
+
+func (s *fileStore) LogConfig() config.LogConfig {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.config.Log
+}
+
+func (s *fileStore) SetLogConfig(cfg config.LogConfig) error {
+	s.mu.Lock()
+	old := s.config.Log
+	s.config.Log = cfg
+	if err := s.save(); err != nil {
+		s.config.Log = old
 		s.mu.Unlock()
 		return err
 	}

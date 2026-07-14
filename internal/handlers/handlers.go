@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/labstack/echo/v5"
 	"go.lumeweb.com/s3-server/internal/api"
 	"go.lumeweb.com/s3-server/internal/backend"
+	"go.lumeweb.com/s3-server/internal/config"
 	"go.lumeweb.com/s3-server/internal/status"
 	"go.lumeweb.com/s3-server/internal/store"
 	"go.lumeweb.com/s3-server/internal/updater"
@@ -80,17 +82,21 @@ type ConfigUpdateResponse struct {
 }
 
 type S3ConfigResponse struct {
-	Directory         string   `json:"directory"`
-	IndexerURL        string   `json:"indexer_url"`
-	AvailableIndexers []string `json:"available_indexers"`
-	HostBases         []string `json:"host_bases"`
+	Directory         string                `json:"directory"`
+	IndexerURL        string                `json:"indexer_url"`
+	AvailableIndexers []config.IndexerOption `json:"available_indexers"`
+	HostBases         []string              `json:"host_bases"`
+	DiskUsageLimit    uint64               `json:"disk_usage_limit"`
+	UploadWastePct    float64              `json:"upload_waste_pct"`
 }
 
 type SetS3ConfigRequest struct {
-	Directory         string   `json:"directory"`
-	IndexerURL        string   `json:"indexer_url"`
-	AvailableIndexers []string `json:"available_indexers"`
-	HostBases         []string `json:"host_bases"`
+	Directory         string                `json:"directory"`
+	IndexerURL        string                `json:"indexer_url"`
+	AvailableIndexers []config.IndexerOption `json:"available_indexers"`
+	HostBases         []string              `json:"host_bases"`
+	DiskUsageLimit    uint64               `json:"disk_usage_limit"`
+	UploadWastePct    float64              `json:"upload_waste_pct"`
 }
 
 type SSLConfigResponse struct {
@@ -105,6 +111,16 @@ type SetSSLConfigRequest struct {
 	ACMEDirURL string `json:"acme_dir_url,omitempty"`
 }
 
+type LogConfigResponse struct {
+	Level  string `json:"level"`
+	Format string `json:"format"`
+}
+
+type SetLogConfigRequest struct {
+	Level  string `json:"level"`
+	Format string `json:"format"`
+}
+
 type UserListResponse struct {
 	Users []string `json:"users"`
 }
@@ -115,6 +131,7 @@ type UserResponse struct {
 
 type BucketResponse struct {
 	Name      string    `json:"name"`
+	Owner     string    `json:"owner,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -123,7 +140,8 @@ type ListBucketsResponse struct {
 }
 
 type CreateBucketRequest struct {
-	Name string `json:"name"`
+	Name  string `json:"name"`
+	Owner string `json:"owner,omitempty"`
 }
 
 type BucketVersioningResponse struct {
@@ -191,21 +209,29 @@ func (h *S3Handler) Swap(handler http.Handler) {
 	h.mu.Unlock()
 }
 
+// LogLevelUpdater hot-reloads the zap log level at runtime.
+// Implemented by the logger wrapper in main.go.
+type LogLevelUpdater interface {
+	SetLevel(level config.LogConfig)
+}
+
 // ServicesConfig holds the dependencies for panel services.
 type ServicesConfig struct {
-	Store          store.Store
-	KeyStore       func() backend.S3DStore
-	Backend        func() backend.Backend
-	AdminHandler   http.Handler
-	Restarter      BackendRestarter
-	BackendStatus  func() status.Status
-	InitError      func() string
-	Version        string
-	PlatformName   string
-	Log            *zap.Logger
-	CSRFToken      func(*echo.Context) string
-	SSEBroker      SSEBroker
-	UpdateManager  UpdaterManager
+	Store           store.Store
+	KeyStore        func() backend.S3DStore
+	Backend         func() backend.Backend
+	AccountClient   func() backend.AccountClient
+	AdminHandler    http.Handler
+	Restarter       BackendRestarter
+	BackendStatus   func() status.Status
+	InitError       func() string
+	Version         string
+	PlatformName    string
+	Log             *zap.Logger
+	LogLevelUpdater LogLevelUpdater // optional: hot-reloads log level without process restart
+	CSRFToken       func(*echo.Context) string
+	SSEBroker       SSEBroker
+	UpdateManager   UpdaterManager
 }
 
 // Services handles panel API and page requests.
@@ -217,38 +243,42 @@ type SSEBroker interface {
 }
 
 type Services struct {
-	store         store.Store
-	keyStore      func() backend.S3DStore
-	backend       func() backend.Backend
-	adminHandler  http.Handler
-	restarter     BackendRestarter
-	backendStatus func() status.Status
-	initError     func() string
-	version       string
-	platformName  string
-	log           *zap.Logger
-	csrfToken     func(*echo.Context) string
-	sseBroker     SSEBroker
-	updater       UpdaterManager
-	keyMu         sync.RWMutex
+	store            store.Store
+	keyStore         func() backend.S3DStore
+	backend          func() backend.Backend
+	accountClient    func() backend.AccountClient
+	adminHandler     http.Handler
+	restarter        BackendRestarter
+	backendStatus    func() status.Status
+	initError        func() string
+	version          string
+	platformName     string
+	log              *zap.Logger
+	logLevelUpdater  LogLevelUpdater
+	csrfToken        func(*echo.Context) string
+	sseBroker        SSEBroker
+	updater          UpdaterManager
+	keyMu            sync.RWMutex
 }
 
 // NewServices creates a Services instance from the given config.
 func NewServices(cfg ServicesConfig) *Services {
 	return &Services{
-		store:         cfg.Store,
-		keyStore:      cfg.KeyStore,
-		backend:       cfg.Backend,
-		adminHandler:  cfg.AdminHandler,
-		restarter:     cfg.Restarter,
-		backendStatus: cfg.BackendStatus,
-		initError:     cfg.InitError,
-		version:       cfg.Version,
-		platformName:  cfg.PlatformName,
-		log:           cfg.Log,
-		csrfToken:     cfg.CSRFToken,
-		sseBroker:     cfg.SSEBroker,
-		updater:       cfg.UpdateManager,
+		store:            cfg.Store,
+		keyStore:         cfg.KeyStore,
+		backend:          cfg.Backend,
+		accountClient:    cfg.AccountClient,
+		adminHandler:     cfg.AdminHandler,
+		restarter:        cfg.Restarter,
+		backendStatus:    cfg.BackendStatus,
+		initError:        cfg.InitError,
+		version:          cfg.Version,
+		platformName:     cfg.PlatformName,
+		log:              cfg.Log,
+		logLevelUpdater:  cfg.LogLevelUpdater,
+		csrfToken:        cfg.CSRFToken,
+		sseBroker:        cfg.SSEBroker,
+		updater:          cfg.UpdateManager,
 	}
 }
 
@@ -283,7 +313,6 @@ func RegisterRoutes(g *echo.Group, svc *Services) {
 
 	g.POST("/api/backups", svc.createBackup)
 	g.GET("/api/admin/stats", svc.getStats)
-	g.GET("/api/admin/prometheus", svc.getPrometheus)
 
 	g.GET("/api/backups", svc.listBackups)
 	g.GET("/api/backups/:filename", svc.getBackup)
@@ -293,15 +322,17 @@ func RegisterRoutes(g *echo.Group, svc *Services) {
 	g.PUT("/api/s3-config", svc.setS3Config)
 	g.GET("/api/ssl-config", svc.getSSLConfig)
 	g.PUT("/api/ssl-config", svc.setSSLConfig)
+	g.GET("/api/log-config", svc.getLogConfig)
+	g.PUT("/api/log-config", svc.setLogConfig)
 
 	g.POST("/api/system/flush", svc.systemFlush)
 	g.POST("/api/system/restart", svc.systemRestart)
 	g.POST("/api/password/change", svc.changePassword)
 
-	// SSE event stream — blocks until client disconnects
+	// SSE event stream: blocks until client disconnects
 	g.GET("/api/events", svc.sseEvents)
 
-	// Update control (adaptive — only works when /state volume is mounted)
+	// Update control (adaptive: only works when /state volume is mounted)
 	g.GET("/api/update/status", svc.updateStatusAPI)
 	g.POST("/api/update/toggle", svc.updateToggleAPI)
 	g.POST("/api/update/trigger", svc.updateTriggerAPI)
@@ -327,6 +358,18 @@ func (s *Services) adminAccessKey() (string, error) {
 		return "", errors.New("no access keys available")
 	}
 	return keys[0].AccessKeyID, nil
+}
+
+// accessKeyForUser returns the first access key ID belonging to the given
+// user. Returns an error if the user has no keys.
+func (s *Services) accessKeyForUser(userName string) (string, error) {
+	keys := s.listAccessKeys()
+	for _, k := range keys {
+		if k.UserName == userName {
+			return k.AccessKeyID, nil
+		}
+	}
+	return "", fmt.Errorf("user %q has no access keys", userName)
 }
 
 func (s *Services) proxyToAdmin(c *echo.Context, adminPath string) error {
@@ -367,8 +410,4 @@ func (s *Services) listAccessKeysLocked() []backend.AccessKeyInfo {
 		return nil
 	}
 	return keys
-}
-
-func isHTMXRequest(c *echo.Context) bool {
-	return c.Request().Header.Get("HX-Request") == "true"
 }

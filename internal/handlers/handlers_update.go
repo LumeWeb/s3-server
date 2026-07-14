@@ -31,7 +31,7 @@ func (s *Services) updateToggleAPI(c *echo.Context) error {
 	}
 
 	var req updateToggleRequest
-	if err := bindJSON(c, &req); err != nil {
+	if err := bindJSON(c, s.log, &req); err != nil {
 		return err
 	}
 

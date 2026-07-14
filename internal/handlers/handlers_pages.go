@@ -13,44 +13,56 @@ import (
 	"github.com/SiaFoundation/s3d/s3"
 	"github.com/labstack/echo/v5"
 	"github.com/samber/lo"
-	"go.lumeweb.com/s3-server/internal/api"
-	"go.lumeweb.com/s3-server/internal/backend"
 	"go.lumeweb.com/s3-server/internal/build"
 	"go.lumeweb.com/s3-server/internal/config"
 	"go.lumeweb.com/s3-server/internal/status"
 	"go.lumeweb.com/s3-server/internal/updater"
 	"go.lumeweb.com/s3-server/internal/views"
+	"go.uber.org/zap"
 )
 
 func (s *Services) dashboardPage(c *echo.Context) error {
 	groups := s.groupedKeys()
-	return views.Dashboard(s.version, groups, s.csrfToken(c)).Render(c.Request().Context(), c.Response())
+	userCount := len(groups)
+	bucketCount := 0
+	b := s.getBackend()
+	if b != nil {
+		for _, g := range groups {
+			if count, err := b.BucketCountForUser(c.Request().Context(), g.UserName); err == nil {
+				bucketCount += count
+			}
+		}
+	}
+	return views.Dashboard(s.version, groups, userCount, bucketCount, s.csrfToken(c)).Render(c.Request().Context(), c.Response())
 }
 
 func (s *Services) settingsPage(c *echo.Context) error {
 	s3Cfg := s.store.S3Config()
 	sslCfg := s.store.SSLConfig()
+	logCfg := s.store.LogConfig()
 	var updateStatus updater.UpdateStatus
 	if s.updater != nil {
 		updateStatus = s.updater.Status()
 	}
-	return views.Settings(s.csrfToken(c), s3Cfg, sslCfg, updateStatus, s.platformName, build.PanelVersion, build.S3dVersion).Render(c.Request().Context(), c.Response())
+	return views.Settings(s.csrfToken(c), s3Cfg, sslCfg, logCfg, updateStatus, s.platformName, build.PanelVersion, build.S3dVersion).Render(c.Request().Context(), c.Response())
 }
 
 func (s *Services) usersPage(c *echo.Context) error {
 	ks, err := s.requireKeyStore(c)
 	if err != nil {
-		return err
+		return s.renderPageError(c, "Backend not started", "The S3 backend hasn't started yet. This can happen after initial setup or a configuration change.")
 	}
 
 	users, err := ks.ListUsers()
 	if err != nil {
-		return api.SendInternal(c, api.TypeUserListFailed, "failed to list users", err)
+		s.log.Error("failed to list users", zap.Error(err))
+		return s.renderPageError(c, "Failed to load users", "An error occurred while fetching the user list.")
 	}
 
 	keys, err := ks.ListAccessKeys(nil)
 	if err != nil {
-		return api.SendInternal(c, api.TypeAccessKeyListFailed, "failed to list access keys", err)
+		s.log.Error("failed to list access keys", zap.Error(err))
+		return s.renderPageError(c, "Failed to load access keys", "An error occurred while fetching the access key list.")
 	}
 	keyCounts := make(map[string]int, len(keys))
 	for _, k := range keys {
@@ -58,10 +70,20 @@ func (s *Services) usersPage(c *echo.Context) error {
 	}
 
 	viewUsers := make([]views.UserInfo, len(users))
+	b := s.getBackend()
 	for i, name := range users {
+		bucketCount := 0
+		if b != nil {
+			if count, err := b.BucketCountForUser(c.Request().Context(), name); err == nil {
+				bucketCount = count
+			} else {
+				s.log.Warn("failed to get bucket count for user", zap.String("user", name), zap.Error(err))
+			}
+		}
 		viewUsers[i] = views.UserInfo{
-			Name:     name,
-			KeyCount: keyCounts[name],
+			Name:        name,
+			KeyCount:    keyCounts[name],
+			BucketCount: bucketCount,
 		}
 	}
 
@@ -70,6 +92,39 @@ func (s *Services) usersPage(c *echo.Context) error {
 
 func (s *Services) keysPage(c *echo.Context) error {
 	groups := s.groupedKeys()
+
+	// Optional ?user=<name> filter: when navigating from the users page.
+	if filterUser := c.QueryParam("user"); filterUser != "" {
+		found := false
+		filtered := make([]views.UserKeyGroup, 0, 1)
+		for _, g := range groups {
+			if g.UserName == filterUser {
+				filtered = append(filtered, g)
+				found = true
+				break
+			}
+		}
+		if !found {
+			// User exists but has no keys: show an empty group so the
+			// page renders "No access keys yet." instead of a blank list.
+			filtered = append(filtered, views.UserKeyGroup{
+				UserName: filterUser,
+				Keys:     []config.KeyPair{},
+			})
+		}
+		groups = filtered
+	}
+
+	// Fetch bucket counts per user via the read-only SQLite handle.
+	b := s.getBackend()
+	if b != nil {
+		for i := range groups {
+			if count, err := b.BucketCountForUser(c.Request().Context(), groups[i].UserName); err == nil {
+				groups[i].BucketCount = count
+			}
+		}
+	}
+
 	backendRunning := false
 	if s.backendStatus != nil {
 		backendRunning = s.backendStatus() == status.Running
@@ -78,32 +133,54 @@ func (s *Services) keysPage(c *echo.Context) error {
 }
 
 func (s *Services) bucketsPage(c *echo.Context) error {
-	b, accessKey, err := s.requireBackend(c)
-	if err != nil {
-		return err
+	b := s.getBackend()
+	if b == nil {
+		return s.renderPageError(c, "Backend not started", "The S3 backend hasn't started yet. This can happen after initial setup or a configuration change.")
 	}
 
-	buckets, err := b.ListBuckets(c.Request().Context(), accessKey)
+	ks, err := s.requireKeyStore(c)
 	if err != nil {
-		return api.SendInternal(c, api.TypeBucketListFailed, "failed to list buckets", err)
+		return s.renderPageError(c, "Backend not started", "The S3 backend hasn't started yet. This can happen after initial setup or a configuration change.")
+	}
+	users, err := ks.ListUsers()
+	if err != nil {
+		s.log.Error("failed to list users", zap.Error(err))
+		return s.renderPageError(c, "Failed to load users", "An error occurred while fetching the user list.")
+	}
+
+	buckets, err := b.ListAllBuckets(c.Request().Context())
+	if err != nil {
+		s.log.Error("failed to list buckets", zap.Error(err))
+		return s.renderPageError(c, "Failed to load buckets", "An error occurred while fetching the bucket list.")
 	}
 
 	viewBuckets := make([]views.BucketInfo, len(buckets))
 	for i, bucket := range buckets {
+		count, size, err := b.BucketStats(c.Request().Context(), bucket.Name)
+		if err != nil {
+			s.log.Warn("failed to get bucket stats", zap.String("bucket", bucket.Name), zap.Error(err))
+		}
+		versioning, err := b.BucketVersioning(c.Request().Context(), bucket.Name)
+		if err != nil {
+			s.log.Warn("failed to get bucket versioning", zap.String("bucket", bucket.Name), zap.Error(err))
+		}
 		viewBuckets[i] = views.BucketInfo{
-			Name:       bucket.Name,
-			CreatedAt:  formatPanelTime(bucket.CreationDate.Time),
-			Versioning: "", // fetched lazily via HTMX to avoid N+1 backend calls
+			Name:        bucket.Name,
+			Owner:       bucket.Owner,
+			CreatedAt:   formatPanelTime(bucket.CreatedAt),
+			ObjectCount: count,
+			TotalSize:   size,
+			Versioning:  versioning,
 		}
 	}
 
-	return views.Buckets(viewBuckets, s.csrfToken(c)).Render(c.Request().Context(), c.Response())
+	return views.Buckets(viewBuckets, users, s.csrfToken(c)).Render(c.Request().Context(), c.Response())
 }
 
 func (s *Services) backupsPage(c *echo.Context) error {
 	dir := s.store.S3Config().Directory
 	if dir == "" {
-		return api.SendValidation(c, api.TypeDataDirectoryNotConfigured, "data directory not configured")
+		return s.renderPageError(c, "No data directory", "The data directory is not configured. Set it in Settings before managing backups.")
 	}
 
 	backupsDir := filepath.Join(dir, "backups")
@@ -112,7 +189,8 @@ func (s *Services) backupsPage(c *echo.Context) error {
 		if os.IsNotExist(err) {
 			return views.Backups(nil, s.csrfToken(c)).Render(c.Request().Context(), c.Response())
 		}
-		return api.SendInternal(c, api.TypeBackupListFailed, "failed to list backups", err)
+		s.log.Error("failed to list backups", zap.Error(err))
+		return s.renderPageError(c, "Failed to load backups", "An error occurred while reading the backups directory.")
 	}
 
 	viewBackups := lo.FilterMap(entries, func(entry os.DirEntry, _ int) (views.BackupInfo, bool) {
@@ -140,7 +218,8 @@ func (s *Services) backupsPage(c *echo.Context) error {
 func (s *Services) monitoringPage(c *echo.Context) error {
 	stats, err := s.fetchUploadStats(c)
 	if err != nil {
-		return api.SendInternal(c, api.TypeMonitoringStatsFailed, "failed to load monitoring stats", err)
+		s.log.Error("failed to load monitoring stats", zap.Error(err))
+		return s.renderPageError(c, "Failed to load monitoring", "An error occurred while fetching monitoring stats.")
 	}
 	return views.Monitoring(stats, s.csrfToken(c)).Render(c.Request().Context(), c.Response())
 }
@@ -176,6 +255,20 @@ func (s *Services) fetchUploadStats(c *echo.Context) (views.UploadStats, error) 
 	stats.FailedUploads = s3stats.FailedUploads
 	stats.OrphanedObjects = s3stats.OrphanedObjects
 	stats.MultipartUploads = s3stats.MultipartUploads
+
+	// Fetch account info: non-fatal. Zero values are fine if unavailable.
+	if s.accountClient != nil {
+		if ac := s.accountClient(); ac != nil {
+			if info, err := ac.Account(c.Request().Context()); err == nil {
+				stats.AccountMaxPinnedData = info.MaxPinnedData
+				stats.AccountRemainingStorage = info.RemainingStorage
+				stats.AccountPinnedData = info.PinnedData
+				stats.AccountPinnedSize = info.PinnedSize
+				stats.AccountReady = info.Ready
+			}
+		}
+	}
+
 	return stats, nil
 }
 
@@ -191,34 +284,44 @@ func (s *Services) groupedKeys() []views.UserKeyGroup {
 // Caller must hold keyMu (read or write).
 func (s *Services) groupedKeysLocked() []views.UserKeyGroup {
 	keys := s.listAccessKeysLocked()
-	order := []string{backend.DefaultUserName}
-	seen := map[string]bool{backend.DefaultUserName: true}
+
+	// Build the user order from ListUsers so users with zero keys appear.
+	ks := s.getKeyStore()
+	var allUsers []string
+	if ks != nil {
+		if users, err := ks.ListUsers(); err == nil {
+			allUsers = users
+		}
+	}
+
+	var order []string
+	seen := map[string]bool{}
+	for _, u := range allUsers {
+		if u == "" || seen[u] {
+			continue
+		}
+		order = append(order, u)
+		seen[u] = true
+	}
 	var groups []views.UserKeyGroup
 
 	byUser := map[string][]config.KeyPair{}
 	for _, k := range keys {
 		u := k.UserName
-		if u == "" {
-			u = backend.DefaultUserName
-		}
 		if !seen[u] {
 			order = append(order, u)
 			seen[u] = true
 		}
 		byUser[u] = append(byUser[u], config.KeyPair{
 			AccessKey: k.AccessKeyID,
-			SecretKey: "", // never expose secret in rendered HTML; only returned once at creation
+			SecretKey: k.SecretKey,
 		})
 	}
 
 	for _, u := range order {
-		if _, ok := byUser[u]; !ok {
-			continue
-		}
 		groups = append(groups, views.UserKeyGroup{
-			UserName:  u,
-			IsDefault: u == backend.DefaultUserName,
-			Keys:      byUser[u],
+			UserName: u,
+			Keys:     byUser[u],
 		})
 	}
 	return groups
