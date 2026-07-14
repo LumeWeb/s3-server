@@ -1,11 +1,12 @@
 // Alpine component: bucket lifecycle management
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-import { api, apiAction } from '../globals'
+import { api, apiAction, reloadAfter } from '../globals'
 
 export function bucketPage(this: any) {
   return {
     showCreate: false,
     createName: '',
+    createOwner: '',
     createErr: '',
     creating: false,
 
@@ -19,6 +20,26 @@ export function bucketPage(this: any) {
     lifecycleLoading: false,
     lifecycleSaving: false,
     lifecycleErr: '',
+
+    init() {
+      this.$watch('showCreate', (v: boolean) => {
+        if (!v) {
+          this.createName = ''
+          this.createOwner = ''
+          this.createErr = ''
+          this.creating = false
+        }
+      })
+      this.$watch('showLifecycle', (v: boolean) => {
+        if (!v) {
+          this.lifecycleBucket = ''
+          this.lifecycleRules = []
+          this.lifecycleLoading = false
+          this.lifecycleSaving = false
+          this.lifecycleErr = ''
+        }
+      })
+    },
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     async openLifecycle(name: string) {
@@ -104,7 +125,7 @@ export function bucketPage(this: any) {
           ),
           'Versioning ' + (newStatus === 'Enabled' ? 'enabled' : 'suspended') + ' for ' + name,
         )
-        setTimeout(() => window.location.reload(), 800)
+        reloadAfter()
       } catch {
         // toast already shown by apiAction
       }
@@ -134,12 +155,14 @@ export function bucketPage(this: any) {
       this.creating = true
       this.createErr = ''
       try {
-        await apiAction(
+        const res = await apiAction(
           'Creating bucket…',
-          () => api()!.post('/_panel/api/buckets', { name: this.createName }),
+          () => api()!.post('/_panel/api/buckets', { name: this.createName, owner: this.createOwner }),
           'Bucket "' + this.createName + '" created',
         )
+        if (res === undefined) return
         this.showCreate = false
+        reloadAfter()
       } catch (e: any) {
         this.createErr = e.message
       } finally {

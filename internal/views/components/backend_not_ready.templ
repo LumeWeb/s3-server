@@ -1,0 +1,8 @@
+package components
+
+// BackendNotReady renders a page-level banner explaining the S3 backend
+// hasn't started yet. Used by page handlers when the backend is nil.
+// For specific errors, use PageError with a custom title and message.
+templ BackendNotReady() {
+	@PageError("Backend not started", "The S3 backend hasn't started yet. This can happen after initial setup or a configuration change.")
+}

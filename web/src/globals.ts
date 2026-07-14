@@ -29,12 +29,15 @@ declare global {
     __sseToast?: (msg: string, type?: ToastType) => void
     __sseProcessing?: (msg: string) => void
     __sseAction?: (processingMsg: string, fn: () => Promise<any>, successMsg?: string) => Promise<any>
+    __reloadAfter?: (ms?: number) => void
+    __copyToClipboard?: (text: string, successMsg?: string) => Promise<void>
+    __dialogHandlers?: Map<string, () => void>
+    __onDialogConfirm?: (source: string, handler: () => void) => void
     __sseEs?: EventSource
     __siaSdk?: SiaSdk
     __siaReady?: Promise<void>
     sodium?: any
     Alpine?: any
-    htmx?: any
   }
 }
 
@@ -80,6 +83,25 @@ export async function apiAction<T = any>(
 /** Resolves when the Sia SDK is ready (onboarding page only). */
 export function siaReady(): Promise<void> {
   return window.__siaReady ?? Promise.resolve()
+}
+
+/** Reloads the page after a short delay (lets success toasts finish). */
+export function reloadAfter(ms = 800): void {
+  setTimeout(() => window.location.reload(), ms)
+}
+
+/** Copies text to clipboard with HTTP fallback. Shows a toast. */
+export function copyToClipboard(text: string, successMsg?: string): Promise<void> {
+  return window.__copyToClipboard!(text, successMsg)
+}
+
+/**
+ * Registers a handler for a dialog-confirm event with the given source name.
+ * The Dialog component dispatches `dialog-confirm` when the user clicks the
+ * confirm button. This replaces inline `@dialog-confirm.window` Alpine handlers.
+ */
+export function onDialogConfirm(source: string, handler: () => void): void {
+  window.__onDialogConfirm?.(source, handler)
 }
 
 /** The Sia SDK object (onboarding page only). */

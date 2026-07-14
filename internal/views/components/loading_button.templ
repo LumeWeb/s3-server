@@ -1,0 +1,54 @@
+package components
+
+// LoadingButtonOpts configures a LoadingButton.
+type LoadingButtonOpts struct {
+	OnClick      string // Alpine @click expression (empty = no handler, use for submit buttons)
+	LoadingProp  string // Alpine property for loading state (controls spinner)
+	LoadingLabel string // Label shown when loading
+	Disabled     string // Alpine :disabled expression (empty = use LoadingProp)
+	Type         string // "button" (default) or "submit"
+	Class        string // CSS class (default: "btn-full")
+}
+
+// LoadingButton renders a button with idle/loading states.
+// When loadingProp is truthy (Alpine), shows a spinner + loadingLabel.
+// Otherwise shows the idle label.
+// Disabled defaults to LoadingProp if not set.
+//
+// Example:
+//
+//	@LoadingButton("Continue", components.LoadingButtonOpts{
+//	    OnClick: "finishSetup()",
+//	    LoadingProp: "loading",
+//	    LoadingLabel: "Processing...",
+//	})
+templ LoadingButton(label string, opts LoadingButtonOpts) {
+	{{
+		btnType := opts.Type
+		if btnType == "" {
+			btnType = "button"
+		}
+		cls := opts.Class
+		if cls == "" {
+			cls = "btn-full"
+		}
+		disabled := opts.Disabled
+		if disabled == "" {
+			disabled = opts.LoadingProp
+		}
+	}}
+	<button
+		type={ btnType }
+		class={ cls }
+		:disabled={ disabled }
+		if opts.OnClick != "" {
+			@click={ opts.OnClick }
+		}
+	>
+		<span x-show={ "!" + opts.LoadingProp } class="inline-flex items-center gap-2">{ label }</span>
+		<span x-show={ opts.LoadingProp } x-cloak class="inline-flex items-center gap-2" aria-live="polite">
+			@Spinner()
+			<span>{ opts.LoadingLabel }</span>
+		</span>
+	</button>
+}

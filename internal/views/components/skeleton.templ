@@ -1,0 +1,88 @@
+package components
+
+// Skeleton is a single animated placeholder bar. The most common building
+// block for skeleton UIs. Width defaults to full; pass a Tailwind width
+// class (e.g. "w-16", "w-24", "w-1/2") to size it.
+//
+// Usage:
+//
+//	@Skeleton(SkeletonOpts{Width: "w-24", Class: "h-3"})
+//	@Skeleton() // full-width, h-4
+templ Skeleton(opts SkeletonOpts) {
+	<div
+		class={ "rounded bg-muted animate-pulse " + skeletonWidth(opts.Width) + " " + opts.Class }
+		aria-hidden="true"
+	></div>
+}
+
+// SkeletonText renders N lines of skeleton bars with decreasing widths,
+// simulating a paragraph of text. Pass Lines to control count (default 3).
+templ SkeletonText(opts SkeletonTextOpts) {
+	<div class="space-y-2">
+		for i := 0; i < skeletonLines(opts.Lines); i++ {
+			@Skeleton(SkeletonOpts{
+				Width: skeletonTextWidth(i, skeletonLines(opts.Lines)),
+				Class: "h-3",
+			})
+		}
+	</div>
+}
+
+// SkeletonCard renders a full card skeleton: a title bar + body lines.
+// Useful for placeholder cards while data loads.
+templ SkeletonCard(opts SkeletonCardOpts) {
+	<div class={ "card p-4 space-y-3 " + opts.Class }>
+		@Skeleton(SkeletonOpts{Width: "w-1/3", Class: "h-5"})
+		if opts.BodyLines > 0 {
+			@SkeletonText(SkeletonTextOpts{Lines: opts.BodyLines})
+		} else {
+			@SkeletonText(SkeletonTextOpts{Lines: 3})
+		}
+	</div>
+}
+
+// SkeletonStatCard renders a stat-card-shaped skeleton: small label + value bar.
+// Matches the shape of the StatCard component used in monitoring.templ.
+templ SkeletonStatCard() {
+	<div class="stat-card">
+		@Skeleton(SkeletonOpts{Width: "w-20", Class: "h-4"})
+		@Skeleton(SkeletonOpts{Width: "w-16", Class: "h-5 mt-2"})
+	</div>
+}
+
+type SkeletonOpts struct {
+	Width string // Tailwind width class (default: "w-full")
+	Class string // extra classes (e.g. "h-3", "mt-1")
+}
+
+type SkeletonTextOpts struct {
+	Lines int // number of lines (default: 3)
+}
+
+type SkeletonCardOpts struct {
+	Class    string
+	BodyLines int
+}
+
+func skeletonWidth(w string) string {
+	if w == "" {
+		return "w-full"
+	}
+	return w
+}
+
+func skeletonLines(n int) int {
+	if n <= 0 {
+		return 3
+	}
+	return n
+}
+
+// skeletonTextWidth returns a width class for each line, making the last
+// line shorter for visual variety.
+func skeletonTextWidth(i, total int) string {
+	if i == total-1 {
+		return "w-2/3"
+	}
+	return "w-full"
+}

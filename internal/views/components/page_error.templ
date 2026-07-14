@@ -1,0 +1,33 @@
+package components
+
+// PageError renders a page-level error banner with a custom title and message.
+// Used by page handlers (HTML routes) when an error occurs, instead of
+// returning raw JSON via api.SendInternal, render the page shell with this
+// banner so the user gets a friendly, actionable message.
+templ PageError(title string, message string) {
+	<div class="max-w-3xl mx-auto px-4 py-6">
+		<div class="card border-yellow-500/30 bg-yellow-500/5">
+			<div class="p-6 flex items-start gap-4">
+				<div class="flex-shrink-0">
+					<svg class="h-8 w-8 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+						<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.75 9.75h19.5a2.25 2.25 0 002.25-2.25v-5.379a2.25 2.25 0 00-.659-1.591l-7.5-7.5a2.25 2.25 0 00-3.182 0l-7.5 7.5a2.25 2.25 0 00-.659 1.591v5.379A2.25 2.25 0 003.75 21.75z"></path>
+					</svg>
+				</div>
+				<div class="flex-1">
+					<h3 class="font-semibold font-display text-foreground">{ title }</h3>
+					<p class="mt-1 text-sm text-muted-foreground font-body">{ message }</p>
+					<p class="mt-2 text-sm text-muted-foreground font-body">
+						Try reloading the page in a moment. If the problem persists, restart the backend from Settings.
+					</p>
+					<button
+						type="button"
+						class="btn-primary text-sm mt-4"
+						@click={ "window.location.reload()" }
+					>
+						Reload page
+					</button>
+				</div>
+			</div>
+		</div>
+	</div>
+}

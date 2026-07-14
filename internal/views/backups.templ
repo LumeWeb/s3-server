@@ -3,55 +3,38 @@ package views
 import (
 	"fmt"
 	"strings"
+
+	"go.lumeweb.com/s3-server/internal/views/components"
 )
 
 templ Backups(backups []BackupInfo, csrfToken string) {
-	@Base("Backups", BackupsContent(backups, csrfToken))
+	@PageLayout("Backups", "backups", "", csrfToken, BackupsContent(backups, csrfToken))
 }
 
 templ BackupsContent(backups []BackupInfo, csrfToken string) {
-	<div class="min-h-screen" x-data="{ backing: false, backupErr: '' }">
-		@Nav("backups", "", csrfToken)
-		<div class="max-w-5xl mx-auto px-4 py-6 space-y-6">
-			<div class="card">
-				<div class="card-header flex items-center justify-between">
-					<div>
-						<h2 class="font-bold font-display text-foreground">Backups</h2>
-						<p class="text-xs text-muted-foreground font-body mt-0.5">SQLite database backups stored on disk</p>
-					</div>
-					<button
-						type="button"
-						class="btn-primary text-sm px-3 py-1.5"
-						:disabled="backing"
-						@click="
-								backing = true; backupErr = '';
-								try { await window.__api.post('/_panel/api/backups'); window.location.reload(); }
-								catch(e) { backupErr = e.message; }
-								finally { backing = false; }
-							"
-					>
-						<span x-show="!backing" x-cloak>+ Backup Now</span>
-						<span x-show="backing" x-cloak>Backing up…</span>
-					</button>
+	<div class="max-w-5xl mx-auto px-4 py-6 space-y-6" x-data="backupsApp">
+		<div class="card">
+			<div class="card-header flex items-center justify-between">
+				<div>
+					<h2 class="font-bold font-display text-foreground">Backups</h2>
+					<p class="text-xs text-muted-foreground font-body mt-0.5">SQLite database backups stored on disk</p>
 				</div>
-				<div id="backups-list" class="divide-y divide-surface-border">
-					if len(backups) == 0 {
-						@EmptyState("No backups yet. Trigger one to get started.", "Backup Now", "/_panel/api/backups")
-					}
-					for _, b := range backups {
-						@BackupRow(b)
-					}
-				</div>
+				@components.Button("+ Backup Now", components.ButtonOpts{Type: "button", Class: "btn-primary text-sm px-3 py-1.5", OnClick: "backupNow()", LoadingProp: "backing", LoadingLabel: "Backing up…", Disabled: "backing"})
 			</div>
-			<p x-show="backupErr" x-cloak class="error-msg" x-text="backupErr"></p>
+			<div id="backups-list" class="divide-y divide-surface-border">
+				if len(backups) == 0 {
+					@components.EmptyState("No backups yet. Trigger one to get started.", "Backup Now", "")
+				}
+				for _, b := range backups {
+					@BackupRow(b)
+				}
+			</div>
 		</div>
+		<p x-show="backupErr" x-cloak class="error-msg" x-text="backupErr"></p>
 	</div>
 }
 
 templ BackupRow(b BackupInfo) {
-	// Sanitize filename for use in HTML id attributes — dots break CSS
-	// selector lookups (querySelector treats them as class separators),
-	// which prevents HTMX's hx-target from resolving.
 	<div class="px-4 py-3 flex items-center justify-between hover:bg-card/30 transition-colors" id={ "backup-" + strings.ReplaceAll(b.Filename, ".", "-") }>
 		<div class="flex items-center gap-3 flex-1 min-w-0">
 			<svg class="h-5 w-5 text-muted-foreground shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
@@ -60,7 +43,7 @@ templ BackupRow(b BackupInfo) {
 			<div class="min-w-0">
 				<div class="font-display text-sm text-foreground">{ b.Filename }</div>
 				<div class="font-body text-xs text-muted-foreground">
-					{ humanBytes(b.Size) }
+					{ components.HumanBytes(b.Size) }
 					if b.CreatedAt != "" {
 						<span class="ml-2">· { b.CreatedAt }</span>
 					}
@@ -77,12 +60,8 @@ templ BackupRow(b BackupInfo) {
 			<button
 				type="button"
 				class="link-danger"
-				data-confirm-variant="danger"
-				hx-delete={ fmt.Sprintf("/_panel/api/backups/%s", b.Filename) }
-				hx-target={ "#backup-" + strings.ReplaceAll(b.Filename, ".", "-") }
-				hx-swap="outerHTML"
-				hx-confirm="Delete this backup?"
-				hx-on::after-request="if (event.detail.successful) { window.__sseToast('Backup deleted', 'success'); setTimeout(() => window.location.reload(), 1500); }"
+				@click={ fmt.Sprintf("deleteBackup('%s')", components.JsEscape(b.Filename)) }
+				:disabled={ fmt.Sprintf("deleting === '%s'", components.JsEscape(b.Filename)) }
 			>
 				Delete
 			</button>
