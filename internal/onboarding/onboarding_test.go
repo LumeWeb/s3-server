@@ -515,7 +515,7 @@ func TestOnboardingFlow_AdminThenKeys(t *testing.T) {
 	assert.True(t, init.initCalled)
 }
 
-// Regression: SetAppKeyHandler when SetOnboardingState fails — FSM transitions
+// Regression: SetAppKeyHandler when SetOnboardingState fails: FSM transitions
 // first, then persist fails and rolls back the FSM to StateAdminSet.
 // sqliteStore is closed. Returns 500, not a misleading 200.
 func TestSetAppKeyHandler_PersistFailure_ReturnsError(t *testing.T) {
@@ -554,7 +554,7 @@ func TestSetAdminPasswordHandler_TransitionFailure_ReturnsError(t *testing.T) {
 	// Use StatePending so the handler proceeds past the state check.
 	svc.fsm = NewFSM(StatePending) // reset to pending
 	mockStore.EXPECT().SetAdminPassword("goodpassword").Return(nil)
-	// SetOnboardingState fails — transitionTo returns error
+	// SetOnboardingState fails: transitionTo returns error
 	mockStore.EXPECT().SetOnboardingState("admin_password_set").Return(errors.New("disk full"))
 
 	e := echo.New()
@@ -566,7 +566,7 @@ func TestSetAdminPasswordHandler_TransitionFailure_ReturnsError(t *testing.T) {
 
 	err := svc.SetAdminPasswordHandler(c)
 	require.NoError(t, err)
-	// Must return 500, not 200 — the error must not be swallowed.
+	// Must return 500, not 200: the error must not be swallowed.
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
 }
 
@@ -575,7 +575,7 @@ func TestSetAdminPasswordHandler_TransitionFailure_ReturnsError(t *testing.T) {
 func TestSetAccessKeysHandler_TransitionFailure_ReturnsError(t *testing.T) {
 	svc, mockStore, testStore, _ := newTestService(t, StateAppKeySet)
 	svc.sqliteStore = testStore
-	// SetOnboardingState fails — transitionTo returns error
+	// SetOnboardingState fails: transitionTo returns error
 	mockStore.EXPECT().SetOnboardingState("complete").Return(errors.New("disk full"))
 
 	e := echo.New()

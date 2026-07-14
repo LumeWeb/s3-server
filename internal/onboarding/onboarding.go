@@ -24,7 +24,7 @@ import (
 	"golang.org/x/crypto/nacl/box"
 )
 
-// AppID is the Sia application identifier — must match factory.go's types.HashBytes([]byte("s3d")).
+// AppID is the Sia application identifier: must match factory.go's types.HashBytes([]byte("s3d")).
 func init() {
 	h := types.HashBytes([]byte("s3d"))
 	AppID = hex.EncodeToString(h[:])
@@ -75,14 +75,14 @@ type StatusResponse struct {
 }
 
 type ConfigResponse struct {
-	IndexerURL        string   `json:"indexer_url"`
-	AvailableIndexers []string `json:"available_indexers"`
-	AppID             string   `json:"app_id"`
-	AppName           string   `json:"app_name"`
-	AppDesc           string   `json:"app_description"`
-	LogoURL           string   `json:"logo_url"`
-	ServiceURL        string   `json:"service_url"`
-	CallbackURL       string   `json:"callback_url"`
+	IndexerURL        string                `json:"indexer_url"`
+	AvailableIndexers []config.IndexerOption `json:"available_indexers"`
+	AppID             string                `json:"app_id"`
+	AppName           string                `json:"app_name"`
+	AppDesc           string                `json:"app_description"`
+	LogoURL           string                `json:"logo_url"`
+	ServiceURL        string                `json:"service_url"`
+	CallbackURL       string                `json:"callback_url"`
 }
 
 type OnboardingStepResponse struct {
@@ -245,6 +245,9 @@ func (svc *Service) SetAppKeyHandler(c *echo.Context) error {
 	// persist selected indexer URL if provided (e.g. custom from onboarding)
 	if req.IndexerURL != "" {
 		resolved := ResolveIndexerURL(req.IndexerURL)
+		if resolved == "" {
+			return api.SendBadRequest(c, api.TypeIndexerURLRequired, "indexer URL rejected: host resolves to a private address or DNS lookup failed")
+		}
 		s3Cfg := svc.store.S3Config()
 		s3Cfg.IndexerURL = resolved
 		if err := svc.store.SetS3Config(s3Cfg); err != nil {
@@ -284,7 +287,7 @@ func (svc *Service) SetAppKeyHandler(c *echo.Context) error {
 		}
 		return api.SendInternal(c, api.TypeOnboardingStateFailed, "failed to update onboarding state", err)
 	}
-	// FSM advanced — persist the new state. If persist fails, roll back
+	// FSM advanced: persist the new state. If persist fails, roll back
 	// the FSM so the store and FSM stay consistent for a clean retry.
 	if err := svc.store.SetOnboardingState(string(StateAppKeySet)); err != nil {
 		svc.log.Error("failed to persist onboarding state", zap.Error(err))
@@ -320,7 +323,7 @@ func (svc *Service) SetAccessKeysHandler(c *echo.Context) error {
 		return api.SendInternal(c, api.TypeSQLiteNotInitialized, "sqlite store not initialized", nil)
 	}
 
-	// Auto-generate credentials — no user input required.
+	// Auto-generate credentials: no user input required.
 	const userName = "admin"
 	accessKey, err := generateAccessKey()
 	if err != nil {
@@ -417,7 +420,7 @@ func (svc *Service) SetAdminPasswordHandler(c *echo.Context) error {
 // start over. It clears the admin password, closes the SQLite store if open,
 // and transitions the FSM back to StatePending.
 func (svc *Service) ResetHandler(c *echo.Context) error {
-	// Close the sqlite store if it's open — the next onboarding run will
+	// Close the sqlite store if it's open: the next onboarding run will
 	// re-open it with a fresh app key.
 	svc.mu.Lock()
 	sqliteStore := svc.sqliteStore
@@ -430,7 +433,7 @@ func (svc *Service) ResetHandler(c *echo.Context) error {
 		}
 	}
 
-	// Clear the admin password hash — SetAdminPassword("") would generate a
+	// Clear the admin password hash: SetAdminPassword("") would generate a
 	// bcrypt hash of the empty string, allowing login with an empty password.
 	if err := svc.store.ClearAdminPassword(); err != nil {
 		svc.log.Error("failed to clear admin password during reset", zap.Error(err))
@@ -465,7 +468,7 @@ func isPrivateHost(host string) bool {
 	// Resolve hostname and check all returned IPs.
 	ips, err := net.LookupIP(host)
 	if err != nil {
-		// DNS resolution failed — block to be safe.
+		// DNS resolution failed: block to be safe.
 		return true
 	}
 	for _, ip := range ips {
@@ -526,7 +529,7 @@ func ResolveIndexerURL(rawURL string) string {
 		return rawURL
 	}
 
-	// No scheme — check the bare host before probing.
+	// No scheme: check the bare host before probing.
 	if isPrivateHost(rawURL) {
 		return ""
 	}
@@ -536,14 +539,14 @@ func ResolveIndexerURL(rawURL string) string {
 	httpsURL := "https://" + rawURL
 	resp, err := client.Head(httpsURL)
 	if err == nil {
-		_ = resp.Body.Close()
+		defer resp.Body.Close()
 		return httpsURL
 	}
 
 	httpURL := "http://" + rawURL
 	resp, err = client.Head(httpURL)
 	if err == nil {
-		_ = resp.Body.Close()
+		defer resp.Body.Close()
 		return httpURL
 	}
 

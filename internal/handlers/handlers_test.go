@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/SiaFoundation/s3d/s3"
 	"github.com/SiaFoundation/s3d/sia"
 	"go.lumeweb.com/s3-server/internal/backend"
 	backendMocks "go.lumeweb.com/s3-server/internal/backend/mocks"
@@ -27,25 +26,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// stubRestarter implements BackendRestarter for testing.
-type stubRestarter struct {
-	restartErr error
-	called     bool
-}
+// stubRestarter removed: use handlerMocks.MockBackendRestarter instead.
 
-func (r *stubRestarter) Restart(ctx context.Context) error {
-	r.called = true
-	return r.restartErr
-}
-
-func newTestServices(t *testing.T) (*Services, *storeMocks.MockStore, *stubRestarter, *backendMocks.MockS3DStore) {
+func newTestServices(t *testing.T) (*Services, *storeMocks.MockStore, *handlerMocks.MockBackendRestarter, *backendMocks.MockS3DStore) {
 	mockStore := storeMocks.NewMockStore(t)
 	mockKS := backendMocks.NewMockS3DStore(t)
-	restarter := &stubRestarter{}
+	restarter := &handlerMocks.MockBackendRestarter{}
+	restarter.Test(t)
+	restarter.On("Restart", mock.Anything).Return(nil).Maybe()
 	log := testutil.NewTestLogger()
 	broker := &handlerMocks.MockSSEBroker{}
-	broker.On("NotifyKeyChange", mock.Anything, mock.Anything).Return()
-	broker.On("NotifyBucketChange", mock.Anything, mock.Anything).Return()
+	broker.Test(t)
+	broker.On("NotifyKeyChange", mock.Anything, mock.Anything).Return().Maybe()
+	broker.On("NotifyBucketChange", mock.Anything, mock.Anything).Return().Maybe()
 	svc := NewServices(ServicesConfig{
 		Store:     mockStore,
 		Restarter: restarter,
@@ -58,14 +51,17 @@ func newTestServices(t *testing.T) (*Services, *storeMocks.MockStore, *stubResta
 
 // newTestServicesWithBroker is like newTestServices but returns the SSE broker
 // so tests can assert notification calls.
-func newTestServicesWithBroker(t *testing.T) (*Services, *storeMocks.MockStore, *stubRestarter, *backendMocks.MockS3DStore, *handlerMocks.MockSSEBroker) {
+func newTestServicesWithBroker(t *testing.T) (*Services, *storeMocks.MockStore, *handlerMocks.MockBackendRestarter, *backendMocks.MockS3DStore, *handlerMocks.MockSSEBroker) {
 	mockStore := storeMocks.NewMockStore(t)
 	mockKS := backendMocks.NewMockS3DStore(t)
-	restarter := &stubRestarter{}
+	restarter := &handlerMocks.MockBackendRestarter{}
+	restarter.Test(t)
+	restarter.On("Restart", mock.Anything).Return(nil).Maybe()
 	log := testutil.NewTestLogger()
 	broker := &handlerMocks.MockSSEBroker{}
-	broker.On("NotifyKeyChange", mock.Anything, mock.Anything).Return()
-	broker.On("NotifyBucketChange", mock.Anything, mock.Anything).Return()
+	broker.Test(t)
+	broker.On("NotifyKeyChange", mock.Anything, mock.Anything).Return().Maybe()
+	broker.On("NotifyBucketChange", mock.Anything, mock.Anything).Return().Maybe()
 	svc := NewServices(ServicesConfig{
 		Store:     mockStore,
 		Restarter: restarter,
@@ -161,11 +157,11 @@ func TestServices_ListKeys(t *testing.T) {
 func TestServices_AddKey_Generated(t *testing.T) {
 	svc, _, restarter, mockKS := newTestServices(t)
 	mockKS.On("ListAccessKeys", mock.Anything).Return([]backend.AccessKeyInfo{}, nil)
-	mockKS.On("CreateUser", backend.DefaultUserName).Return(nil)
-	mockKS.On("CreateAccessKey", backend.DefaultUserName, mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil)
+	mockKS.On("CreateUser", "admin").Return(nil)
+	mockKS.On("CreateAccessKey", "admin", mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil)
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodPost, "/api/keys", strings.NewReader(`{}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/keys", strings.NewReader(`{"user_name":"admin"}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
@@ -173,7 +169,7 @@ func TestServices_AddKey_Generated(t *testing.T) {
 	err := svc.addKey(c)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusCreated, rec.Code)
-	assert.True(t, restarter.called, "backend should restart after adding a key")
+	restarter.AssertCalled(t, "Restart", mock.Anything)
 
 	var resp AddAccessKeyResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
@@ -186,11 +182,11 @@ func TestServices_AddKey_Generated(t *testing.T) {
 func TestServices_AddKey_Custom(t *testing.T) {
 	svc, _, restarter, mockKS := newTestServices(t)
 	mockKS.On("ListAccessKeys", mock.Anything).Return([]backend.AccessKeyInfo{}, nil)
-	mockKS.On("CreateUser", backend.DefaultUserName).Return(nil)
-	mockKS.On("CreateAccessKey", backend.DefaultUserName, "AKIAIOSFODNN7EXAMPLE", "abcdefghijklmnopqrstuvwxyz123456").Return(nil)
+	mockKS.On("CreateUser", "admin").Return(nil)
+	mockKS.On("CreateAccessKey", "admin", "AKIAIOSFODNN7EXAMPLE", "abcdefghijklmnopqrstuvwxyz123456").Return(nil)
 
 	e := echo.New()
-	body := `{"access_key":"AKIAIOSFODNN7EXAMPLE","secret_key":"abcdefghijklmnopqrstuvwxyz123456"}`
+	body := `{"user_name":"admin","access_key":"AKIAIOSFODNN7EXAMPLE","secret_key":"abcdefghijklmnopqrstuvwxyz123456"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/keys", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -199,7 +195,7 @@ func TestServices_AddKey_Custom(t *testing.T) {
 	err := svc.addKey(c)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusCreated, rec.Code)
-	assert.True(t, restarter.called)
+	restarter.AssertCalled(t, "Restart", mock.Anything)
 
 	var resp AddAccessKeyResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
@@ -214,7 +210,7 @@ func TestServices_AddKey_Duplicate(t *testing.T) {
 	}, nil)
 
 	e := echo.New()
-	body := `{"access_key":"AKIAIOSFODNN7EXAMPLE","secret_key":"abcdefghijklmnopqrstuvwxyz123456"}`
+	body := `{"user_name":"admin","access_key":"AKIAIOSFODNN7EXAMPLE","secret_key":"abcdefghijklmnopqrstuvwxyz123456"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/keys", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -232,14 +228,14 @@ func TestServices_AddKey_ValidationErrors(t *testing.T) {
 	}{
 		{"missing access_key", `{"access_key":"","secret_key":"abcdefghijklmnopqrstuvwxyz123456"}`},
 		{"missing secret_key", `{"access_key":"AKIAIOSFODNN7EXAMPLE","secret_key":""}`},
-		{"access_key too short", `{"access_key":"AKIA123","secret_key":"abcdefghijklmnopqrstuvwxyz123456"}`},
-		{"secret_key too short", `{"access_key":"AKIAIOSFODNN7EXAMPLE","secret_key":"short"}`},
+		{"access_key too short", `{"user_name":"admin","access_key":"AKIA123","secret_key":"abcdefghijklmnopqrstuvwxyz123456"}`},
+		{"secret_key too short", `{"user_name":"admin","access_key":"AKIAIOSFODNN7EXAMPLE","secret_key":"short"}`},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			svc, _, _, _ := newTestServices(t)
-			// No KeyStore expectations — validation fails before the duplicate check
+			// No KeyStore expectations: validation fails before the duplicate check
 
 			e := echo.New()
 			req := httptest.NewRequest(http.MethodPost, "/api/keys", strings.NewReader(tt.body))
@@ -272,7 +268,7 @@ func TestServices_DeleteKey(t *testing.T) {
 	err := svc.deleteKey(c)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusNoContent, rec.Code)
-	assert.True(t, restarter.called, "backend should restart after deleting a key")
+	restarter.AssertCalled(t, "Restart", mock.Anything)
 }
 
 func TestServices_DeleteKey_NotFound(t *testing.T) {
@@ -337,7 +333,10 @@ func TestServices_GetS3Config(t *testing.T) {
 	mockStore.EXPECT().S3Config().Return(config.S3Config{
 		Directory:         "/data/s3d",
 		IndexerURL:        "https://sia.storage",
-		AvailableIndexers: []string{"https://sia.pinner.xyz", "https://sia.storage"},
+		AvailableIndexers: []config.IndexerOption{
+			{URL: "https://sia.pinner.xyz", Name: "Pinner"},
+			{URL: "https://sia.storage", Name: "Sia Storage"},
+		},
 		HostBases:         []string{"s3.example.com"},
 	})
 
@@ -353,7 +352,9 @@ func TestServices_GetS3Config(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	assert.Equal(t, "/data/s3d", resp.Directory)
 	assert.Equal(t, "https://sia.storage", resp.IndexerURL)
-	assert.Equal(t, []string{"https://sia.pinner.xyz", "https://sia.storage"}, resp.AvailableIndexers)
+	assert.Len(t, resp.AvailableIndexers, 2)
+	assert.Equal(t, "https://sia.pinner.xyz", resp.AvailableIndexers[0].URL)
+	assert.Equal(t, "https://sia.storage", resp.AvailableIndexers[1].URL)
 	assert.Equal(t, []string{"s3.example.com"}, resp.HostBases)
 }
 
@@ -362,13 +363,16 @@ func TestServices_SetS3Config(t *testing.T) {
 	mockStore.EXPECT().S3Config().Return(config.S3Config{
 		Directory:         "/data/s3d",
 		IndexerURL:        "https://custom.storage",
-		AvailableIndexers: []string{"https://sia.pinner.xyz", "https://sia.storage"},
+		AvailableIndexers: []config.IndexerOption{
+			{URL: "https://sia.pinner.xyz", Name: "Pinner"},
+			{URL: "https://sia.storage", Name: "Sia Storage"},
+		},
 		HostBases:         []string{"s3.example.com"},
 	})
 	mockStore.EXPECT().SetS3Config(config.S3Config{
 		Directory:         "/new/data",
 		IndexerURL:        "https://custom.storage",
-		AvailableIndexers: []string{},
+		AvailableIndexers: []config.IndexerOption{},
 		HostBases:         []string{"s3.example.com"},
 	}).Return(nil)
 
@@ -382,7 +386,8 @@ func TestServices_SetS3Config(t *testing.T) {
 	err := svc.setS3Config(c)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.True(t, restarter.called, "backend should be restarted after S3 config change")
+	// S3 config save no longer auto-restarts; user must restart manually
+	restarter.AssertNotCalled(t, "Restart")
 }
 
 func TestServices_SetS3Config_MissingDirectory(t *testing.T) {
@@ -543,21 +548,6 @@ func TestServices_DeleteUser(t *testing.T) {
 	assert.Equal(t, http.StatusNoContent, rec.Code)
 }
 
-func TestServices_DeleteUser_DefaultUser(t *testing.T) {
-	svc, _, _, _ := newTestServices(t)
-
-	e := echo.New()
-	req := httptest.NewRequest(http.MethodDelete, "/api/users/"+backend.DefaultUserName, nil)
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
-	c.SetPath("/api/users/:name")
-	c.SetPathValues(echo.PathValues{{Name: "name", Value: backend.DefaultUserName}})
-
-	err := svc.deleteUser(c)
-	require.NoError(t, err)
-	assert.Equal(t, http.StatusUnprocessableEntity, rec.Code)
-}
-
 func TestServices_ListUserKeys(t *testing.T) {
 	svc, _, _, mockKS := newTestServices(t)
 	mockKS.On("ListAccessKeys", mock.Anything).Return([]backend.AccessKeyInfo{
@@ -618,21 +608,17 @@ func TestServices_AddKey_WithUserName(t *testing.T) {
 	err := svc.addKey(c)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusCreated, rec.Code)
-	assert.True(t, restarter.called)
+	restarter.AssertCalled(t, "Restart", mock.Anything)
 }
 
 func TestServices_ListBuckets(t *testing.T) {
-	svc, _, _, mockKS := newTestServices(t)
+	svc, _, _, _ := newTestServices(t)
 	mockBackend := backendMocks.NewMockBackend(t)
 	svc.backend = func() backend.Backend { return mockBackend }
 
-	mockKS.On("ListAccessKeys", mock.Anything).Return([]backend.AccessKeyInfo{
-		{AccessKeyID: "AKIAADMIN", SecretKey: "secret"},
-	}, nil)
-
 	created := time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC)
-	mockBackend.On("ListBuckets", mock.Anything, "AKIAADMIN").Return([]s3.BucketInfo{
-		{Name: "bucket1", CreationDate: s3.NewContentTime(created)},
+	mockBackend.On("ListAllBuckets", mock.Anything).Return([]backend.BucketInfo{
+		{Name: "bucket1", Owner: "admin", CreatedAt: created},
 	}, nil)
 
 	e := echo.New()
@@ -648,6 +634,7 @@ func TestServices_ListBuckets(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	require.Len(t, resp.Buckets, 1)
 	assert.Equal(t, "bucket1", resp.Buckets[0].Name)
+	assert.Equal(t, "admin", resp.Buckets[0].Owner)
 	assert.True(t, resp.Buckets[0].CreatedAt.Equal(created))
 }
 
@@ -890,27 +877,6 @@ func TestServices_GetStats_Proxy(t *testing.T) {
 	assert.Equal(t, "/stats/uploads", capturedPath)
 }
 
-func TestServices_GetPrometheus_Proxy(t *testing.T) {
-	svc, _, _, _ := newTestServices(t)
-
-	var capturedPath string
-	svc.adminHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedPath = r.URL.Path
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("# metrics")) //nolint:errcheck
-	})
-
-	e := echo.New()
-	req := httptest.NewRequest(http.MethodGet, "/api/admin/prometheus", nil)
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
-
-	err := svc.getPrometheus(c)
-	require.NoError(t, err)
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "/prometheus", capturedPath)
-}
-
 func TestServices_UsersPage(t *testing.T) {
 	svc, _, _, mockKS := newTestServices(t)
 	svc.csrfToken = func(*echo.Context) string { return "csrf-token" }
@@ -941,14 +907,14 @@ func TestServices_BucketsPage(t *testing.T) {
 	svc.backend = func() backend.Backend { return mockBackend }
 	svc.csrfToken = func(*echo.Context) string { return "csrf-token" }
 
-	mockKS.On("ListAccessKeys", mock.Anything).Return([]backend.AccessKeyInfo{
-		{AccessKeyID: "AKIAADMIN", SecretKey: "secret"},
-	}, nil)
+	mockKS.On("ListUsers").Return([]string{"default"}, nil)
 
 	created := time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC)
-	mockBackend.On("ListBuckets", mock.Anything, "AKIAADMIN").Return([]s3.BucketInfo{
-		{Name: "test-bucket", CreationDate: s3.NewContentTime(created)},
+	mockBackend.On("ListAllBuckets", mock.Anything).Return([]backend.BucketInfo{
+		{Name: "test-bucket", Owner: "admin", CreatedAt: created},
 	}, nil)
+	mockBackend.On("BucketStats", mock.Anything, "test-bucket").Return(0, int64(0), nil)
+	mockBackend.On("BucketVersioning", mock.Anything, "test-bucket").Return("", nil)
 
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodGet, "/buckets", nil)
@@ -1011,7 +977,7 @@ func TestServices_MonitoringPage(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Contains(t, rec.Body.String(), "Pending Objects")
 	assert.Contains(t, rec.Body.String(), "3")
-	assert.Contains(t, rec.Body.String(), "1.0 KB")
+	assert.Contains(t, rec.Body.String(), "1.02 KB")
 }
 
 func TestServices_SystemFlush(t *testing.T) {
@@ -1033,7 +999,7 @@ func TestServices_SystemFlush(t *testing.T) {
 
 func TestServices_SystemFlush_BackendNotReady(t *testing.T) {
 	svc, _, _, _ := newTestServices(t)
-	// no backend set — getBackend() returns nil
+	// no backend set: getBackend() returns nil
 
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodPost, "/api/system/flush", nil)
@@ -1073,7 +1039,7 @@ func TestServices_SystemRestart(t *testing.T) {
 	err := svc.systemRestart(c)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.True(t, restarter.called, "backend should be restarted")
+	restarter.AssertCalled(t, "Restart", mock.Anything)
 
 	var resp ConfigUpdateResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
@@ -1082,7 +1048,10 @@ func TestServices_SystemRestart(t *testing.T) {
 
 func TestServices_SystemRestart_Error(t *testing.T) {
 	svc, _, restarter, _ := newTestServices(t)
-	restarter.restartErr = assert.AnError
+	// Override the default Maybe expectation with an error return
+	restarter.Mock = mock.Mock{}
+	restarter.Test(t)
+	restarter.On("Restart", mock.Anything).Return(assert.AnError)
 
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodPost, "/api/system/restart", nil)
@@ -1092,34 +1061,31 @@ func TestServices_SystemRestart_Error(t *testing.T) {
 	err := svc.systemRestart(c)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
-	assert.True(t, restarter.called)
+	restarter.AssertCalled(t, "Restart", mock.Anything)
 }
 
 // --- Regression tests for Kody review findings on PR #14 ---
 
-// Test 1: Nil-pointer guard in addKey HTMX path (finding #3548390934).
-// addKey/deleteKey call backendStatus() in the HTMX branch; with nil
-// backendStatus it must not panic.
+// Test 1: Nil-pointer guard in addKey (finding #3548390934).
+// addKey must not panic with nil backendStatus.
 func TestServices_AddKey_NilBackendStatus(t *testing.T) {
 	svc, _, _, mockKS := newTestServices(t)
 	svc.backendStatus = nil // simulate uninitialized backend status
 	svc.csrfToken = func(*echo.Context) string { return "csrf-token" }
 	mockKS.On("ListAccessKeys", mock.Anything).Return([]backend.AccessKeyInfo{}, nil)
-	mockKS.On("CreateUser", backend.DefaultUserName).Return(nil)
-	mockKS.On("CreateAccessKey", backend.DefaultUserName, mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil)
+	mockKS.On("CreateUser", "admin").Return(nil)
+	mockKS.On("CreateAccessKey", "admin", mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil)
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodPost, "/api/keys", strings.NewReader(`{}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/keys", strings.NewReader(`{"user_name":"admin"}`))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("HX-Request", "true")
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
 
-	// Should not panic — nil-guard returns false for backendRunning
+	// Should not panic: nil-guard returns false for backendRunning
 	err := svc.addKey(c)
-	// HTMX path renders HTML; non-nil error means rendering succeeded or
-	// returned a view error, but NOT a panic
-	_ = err
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusCreated, rec.Code)
 }
 
 // Test 2: Nil-pointer guard for restarter in addKey (finding #3548391143).
@@ -1127,11 +1093,11 @@ func TestServices_AddKey_NilRestarter(t *testing.T) {
 	svc, _, _, mockKS := newTestServices(t)
 	svc.restarter = nil // simulate uninitialized restarter
 	mockKS.On("ListAccessKeys", mock.Anything).Return([]backend.AccessKeyInfo{}, nil)
-	mockKS.On("CreateUser", backend.DefaultUserName).Return(nil)
-	mockKS.On("CreateAccessKey", backend.DefaultUserName, mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil)
+	mockKS.On("CreateUser", "admin").Return(nil)
+	mockKS.On("CreateAccessKey", "admin", mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil)
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodPost, "/api/keys", strings.NewReader(`{}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/keys", strings.NewReader(`{"user_name":"admin"}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
@@ -1151,23 +1117,24 @@ func TestServices_KeysPage_NilBackendStatus(t *testing.T) {
 	svc.backendStatus = nil
 	svc.csrfToken = func(*echo.Context) string { return "csrf-token" }
 	mockKS.On("ListAccessKeys", mock.Anything).Return([]backend.AccessKeyInfo{
-		{AccessKeyID: "AKIATEST", SecretKey: "secret", UserName: backend.DefaultUserName},
+		{AccessKeyID: "AKIATEST", SecretKey: "secret", UserName: "admin"},
 	}, nil)
+	mockKS.On("ListUsers").Return([]string{"admin"}, nil)
 
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodGet, "/keys", nil)
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
 
-	// Should not panic — nil-guard returns false for backendRunning
+	// Should not panic: nil-guard returns false for backendRunning
 	err := svc.keysPage(c)
 	// Rendering may return an error if templates aren't fully wired, but
 	// it must NOT panic.
-	_ = err
+	require.NoError(t, err)
 }
 
-// Test 4: SecretKey omitted from listKeys API response (finding #3548601488).
-func TestServices_ListKeys_SecretKeyOmitted(t *testing.T) {
+// Test 4: SecretKey included in listKeys API response for copy functionality.
+func TestServices_ListKeys_SecretKeyIncluded(t *testing.T) {
 	svc, _, _, mockKS := newTestServices(t)
 	mockKS.On("ListAccessKeys", mock.Anything).Return([]backend.AccessKeyInfo{
 		{AccessKeyID: "AKIAONE", SecretKey: "supersecret1", UserName: "admin"},
@@ -1186,21 +1153,22 @@ func TestServices_ListKeys_SecretKeyOmitted(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	require.Len(t, resp.Keys, 2)
 	for _, k := range resp.Keys {
-		assert.Empty(t, k.SecretKey, "SecretKey must not be exposed in listKeys API response")
+		assert.NotEmpty(t, k.SecretKey, "SecretKey must be exposed in listKeys API response for copy functionality")
 	}
 }
 
-// Test 5: concurrent deleteKey TOCTOU race — last key must survive (finding #3548758653).
+// Test 5: concurrent deleteKey TOCTOU race: last key must survive (finding #3548758653).
 func TestServices_DeleteKey_Concurrent_LastKey(t *testing.T) {
 	// Use a real stub key store that tracks state under a mutex.
 	ks := &stubKeyStore{
 		keys: []backend.AccessKeyInfo{
-			{AccessKeyID: "AKIAONE", SecretKey: "secret1", UserName: backend.DefaultUserName},
+			{AccessKeyID: "AKIAONE", SecretKey: "secret1", UserName: "admin"},
 		},
 	}
 	log := testutil.NewTestLogger()
 	broker := &handlerMocks.MockSSEBroker{}
-	broker.On("NotifyKeyChange", mock.Anything, mock.Anything).Return()
+	broker.Test(t)
+	broker.On("NotifyKeyChange", mock.Anything, mock.Anything).Return().Maybe()
 	svc := NewServices(ServicesConfig{
 		Log:       log,
 		SSEBroker: broker,
@@ -1249,25 +1217,25 @@ func TestServices_DeleteUser_NotifiesSSE(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusNoContent, rec.Code)
 
-	calls := broker.KeyChangeCalls()
-	require.Len(t, calls, 1, "NotifyKeyChange must be called once")
-	assert.Equal(t, "deleted", calls[0].Args[0])
-	assert.Equal(t, 1, calls[0].Args[1]) // 1 remaining key
+	broker.AssertNumberOfCalls(t, "NotifyKeyChange", 1)
+	broker.AssertCalled(t, "NotifyKeyChange", "deleted", 1)
 }
 
-// Test 7: groupedKeys never includes SecretKey in view model (finding #3548873470).
-func TestServices_GroupedKeys_NoSecretKey(t *testing.T) {
+// Test 7: groupedKeys passes SecretKey through for masking in the template.
+func TestServices_GroupedKeys_PassesSecretKey(t *testing.T) {
 	svc, _, _, mockKS := newTestServices(t)
 	mockKS.On("ListAccessKeys", mock.Anything).Return([]backend.AccessKeyInfo{
-		{AccessKeyID: "AKIAONE", SecretKey: "supersecret1", UserName: backend.DefaultUserName},
+		{AccessKeyID: "AKIAONE", SecretKey: "supersecret1", UserName: "admin"},
 		{AccessKeyID: "AKIATWO", SecretKey: "supersecret2", UserName: "custom"},
 	}, nil)
+	mockKS.On("ListUsers").Return([]string{"admin", "custom"}, nil)
+	mockKS.On("ListUsers").Return([]string{"admin", "custom"}, nil)
 
 	groups := svc.groupedKeys()
 	require.Len(t, groups, 2)
 	for _, g := range groups {
 		for _, kp := range g.Keys {
-			assert.Empty(t, kp.SecretKey, "SecretKey must be empty in groupedKeys view model (path: %s)", kp.AccessKey)
+			assert.NotEmpty(t, kp.SecretKey, "SecretKey must be present in groupedKeys view model (path: %s)", kp.AccessKey)
 		}
 	}
 }
@@ -1276,13 +1244,14 @@ func TestServices_GroupedKeys_NoSecretKey(t *testing.T) {
 func TestServices_KeyMutation_LockReleasedDuringRestart(t *testing.T) {
 	ks := &stubKeyStore{
 		keys: []backend.AccessKeyInfo{
-			{AccessKeyID: "AKIAEXIST", SecretKey: "secret1", UserName: backend.DefaultUserName},
-			{AccessKeyID: "AKIAOTHER", SecretKey: "secret2", UserName: backend.DefaultUserName},
+			{AccessKeyID: "AKIAEXIST", SecretKey: "secret1", UserName: "admin"},
+			{AccessKeyID: "AKIAOTHER", SecretKey: "secret2", UserName: "admin"},
 		},
 	}
 	log := testutil.NewTestLogger()
 	broker := &handlerMocks.MockSSEBroker{}
-	broker.On("NotifyKeyChange", mock.Anything, mock.Anything).Return()
+	broker.Test(t)
+	broker.On("NotifyKeyChange", mock.Anything, mock.Anything).Return().Maybe()
 
 	// slowRestarter blocks until released, simulating a slow backend restart
 	r := &slowRestarter{done: make(chan struct{})}
@@ -1293,11 +1262,11 @@ func TestServices_KeyMutation_LockReleasedDuringRestart(t *testing.T) {
 	})
 	svc.keyStore = func() backend.S3DStore { return ks }
 
-	// Start addKey — it will hold the lock, then release it before Restart().
+	// Start addKey: it will hold the lock, then release it before Restart().
 	addDone := make(chan error, 1)
 	go func() {
 		e := echo.New()
-		req := httptest.NewRequest(http.MethodPost, "/api/keys", strings.NewReader(`{"access_key":"AKIANEW","secret_key":"abcdefghijklmnopqrstuvwxyz0123456789"}`))
+		req := httptest.NewRequest(http.MethodPost, "/api/keys", strings.NewReader(`{"user_name":"admin","access_key":"AKIANEW","secret_key":"abcdefghijklmnopqrstuvwxyz0123456789"}`))
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 		c := e.NewContext(req, rec)
@@ -1321,7 +1290,7 @@ func TestServices_KeyMutation_LockReleasedDuringRestart(t *testing.T) {
 	case err := <-readDone:
 		require.NoError(t, err, "listKeys must succeed while Restart() is in progress")
 	case <-time.After(2 * time.Second):
-		t.Fatal("listKeys blocked during Restart() — keyMu not released")
+		t.Fatal("listKeys blocked during Restart(): keyMu not released")
 	}
 
 	// Release the slow restarter to let addKey finish.

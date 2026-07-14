@@ -2,21 +2,22 @@ package backend
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
+	"path/filepath"
+	"time"
 
 	"github.com/SiaFoundation/s3d/s3"
 	s3dSia "github.com/SiaFoundation/s3d/sia"
 	"github.com/SiaFoundation/s3d/sia/persist/sqlite"
 	"github.com/samber/lo"
 	"go.lumeweb.com/s3-server/internal/config"
-	sdk "go.sia.tech/siastorage"
 	"go.sia.tech/core/types"
+	sdk "go.sia.tech/siastorage"
 	"go.uber.org/zap"
 )
-
-// DefaultUserName is the single s3d user under which panel-managed access keys live.
-const DefaultUserName = "s3d"
 
 // s3dFactory is the production Factory that initializes real s3d components.
 type s3dFactory struct {
@@ -36,6 +37,9 @@ func (f *s3dFactory) Init(ctx context.Context, s3Cfg config.S3Config, sqliteStor
 	if indexerURL == "" {
 		indexerURL = s3Cfg.IndexerURL
 	}
+	if indexerURL == "" {
+		return nil, nil, nil, fmt.Errorf("no indexer URL configured: set s3.indexer_url in panel.yml")
+	}
 
 	builder := sdk.NewBuilder(indexerURL, sdk.AppMetadata{
 		ID:          types.HashBytes([]byte("s3d")),
@@ -51,6 +55,12 @@ func (f *s3dFactory) Init(ctx context.Context, s3Cfg config.S3Config, sqliteStor
 
 	var siaOpts []s3dSia.Option
 	siaOpts = append(siaOpts, s3dSia.WithLogger(f.log.Named("backend")))
+	if s3Cfg.DiskUsageLimit > 0 {
+		siaOpts = append(siaOpts, s3dSia.WithDiskUsageLimit(s3Cfg.DiskUsageLimit))
+	}
+	if s3Cfg.UploadWastePct > 0 {
+		siaOpts = append(siaOpts, s3dSia.WithUploadWaste(s3Cfg.UploadWastePct))
+	}
 
 	// sqliteStore is our S3DStore interface, but s3dSia.New needs the concrete *sqlite.Store.
 	concreteSqlite, ok := sqliteStore.(*sqliteStoreAdapter)
@@ -64,7 +74,20 @@ func (f *s3dFactory) Init(ctx context.Context, s3Cfg config.S3Config, sqliteStor
 	}
 
 	realS3Handler := s3.New(siaBackend, s3.WithHostBucketBases(s3Cfg.HostBases), s3.WithLogger(f.log))
+
+	// Open a second read-only handle for stats queries. SQLite WAL allows
+	// concurrent readers, so this won't contend with s3d's primary handle.
+	dbPath := filepath.Join(s3Cfg.Directory, "s3d.db")
+	statsDB, err := sql.Open("sqlite3", "file:"+dbPath+"?mode=ro&_journal_mode=WAL")
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to open stats database: %w", err)
+	}
+	statsDB.SetMaxOpenConns(2)
+
 	cleanup := func() {
+		if err := statsDB.Close(); err != nil {
+			f.log.Error("failed to close stats database during cleanup", zap.Error(err))
+		}
 		if err := siaBackend.Close(); err != nil {
 			f.log.Error("failed to close sia backend during cleanup", zap.Error(err))
 		}
@@ -73,7 +96,7 @@ func (f *s3dFactory) Init(ctx context.Context, s3Cfg config.S3Config, sqliteStor
 		}
 	}
 
-	return &backendAdapter{inner: siaBackend}, realS3Handler, cleanup, nil
+	return &backendAdapter{inner: siaBackend, statsDB: statsDB}, realS3Handler, cleanup, nil
 }
 
 func (f *s3dFactory) OpenDatabase(dbPath string) (S3DStore, error) {
@@ -86,7 +109,8 @@ func (f *s3dFactory) OpenDatabase(dbPath string) (S3DStore, error) {
 
 // backendAdapter wraps *s3dSia.Sia to implement the Backend interface.
 type backendAdapter struct {
-	inner *s3dSia.Sia
+	inner   *s3dSia.Sia
+	statsDB *sql.DB // read-only handle for stats queries
 }
 
 func (a *backendAdapter) S3Backend() s3.Backend {
@@ -95,6 +119,75 @@ func (a *backendAdapter) S3Backend() s3.Backend {
 
 func (a *backendAdapter) ListBuckets(ctx context.Context, accessKeyID string) ([]s3.BucketInfo, error) {
 	return a.inner.ListBuckets(ctx, accessKeyID)
+}
+
+// ListAllBuckets returns all buckets across all users with owner names.
+func (a *backendAdapter) ListAllBuckets(ctx context.Context) ([]BucketInfo, error) {
+	rows, err := a.statsDB.QueryContext(ctx,
+		`SELECT b.name, COALESCE(u.name, '') as owner, b.created_at
+		 FROM buckets b
+		 LEFT JOIN users u ON u.id = b.user_id
+		 ORDER BY b.created_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var buckets []BucketInfo
+	for rows.Next() {
+		var bi BucketInfo
+		var ts int64
+		if err := rows.Scan(&bi.Name, &bi.Owner, &ts); err != nil {
+			return nil, err
+		}
+		bi.CreatedAt = time.Unix(ts, 0)
+		buckets = append(buckets, bi)
+	}
+	return buckets, rows.Err()
+}
+
+func (a *backendAdapter) BucketStats(ctx context.Context, bucketName string) (count int, size int64, err error) {
+	const q = `SELECT COUNT(*), COALESCE(SUM(o.size), 0)
+		FROM objects o
+		JOIN buckets b ON b.id = o.bucket_id
+		WHERE b.name = ? AND o.is_latest = 1 AND o.is_delete_marker = 0`
+	row := a.statsDB.QueryRowContext(ctx, q, bucketName)
+	if err = row.Scan(&count, &size); err != nil {
+		return 0, 0, fmt.Errorf("failed to query bucket stats: %w", err)
+	}
+	return count, size, nil
+}
+
+func (a *backendAdapter) BucketOwner(ctx context.Context, bucketName string) (string, error) {
+	var owner string
+	err := a.statsDB.QueryRowContext(ctx,
+		`SELECT u.name FROM buckets b JOIN users u ON u.id = b.user_id WHERE b.name = ?`,
+		bucketName,
+	).Scan(&owner)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return owner, err
+}
+
+func (a *backendAdapter) BucketVersioning(ctx context.Context, bucketName string) (string, error) {
+	var status string
+	err := a.statsDB.QueryRowContext(ctx,
+		`SELECT versioning_status FROM buckets WHERE name = ?`,
+		bucketName,
+	).Scan(&status)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return status, err
+}
+
+func (a *backendAdapter) BucketCountForUser(ctx context.Context, userName string) (int, error) {
+	var count int
+	err := a.statsDB.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM buckets b JOIN users u ON u.id = b.user_id WHERE u.name = ?`,
+		userName,
+	).Scan(&count)
+	return count, err
 }
 
 func (a *backendAdapter) CreateBucket(ctx context.Context, accessKeyID, name string) error {

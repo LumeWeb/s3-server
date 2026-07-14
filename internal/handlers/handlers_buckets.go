@@ -10,6 +10,7 @@ import (
 	"github.com/labstack/echo/v5"
 	"github.com/samber/lo"
 	"go.lumeweb.com/s3-server/internal/api"
+	"go.lumeweb.com/s3-server/internal/backend"
 )
 
 // LifecycleRuleJSON is the simplified JSON representation of an S3 lifecycle
@@ -66,19 +67,20 @@ func lifecycleConfigToJSON(cfg s3.LifecycleConfiguration) LifecycleConfigJSON {
 }
 
 func (s *Services) listBuckets(c *echo.Context) error {
-	b, accessKey, err := s.requireBackend(c)
+	b, err := s.requireBackendOnly(c)
 	if err != nil {
 		return err
 	}
-	buckets, err := b.ListBuckets(c.Request().Context(), accessKey)
+	buckets, err := b.ListAllBuckets(c.Request().Context())
 	if err != nil {
 		return api.SendInternal(c, api.TypeBucketListFailed, "failed to list buckets", err)
 	}
 	resp := ListBucketsResponse{
-		Buckets: lo.Map(buckets, func(bucket s3.BucketInfo, _ int) BucketResponse {
+		Buckets: lo.Map(buckets, func(bucket backend.BucketInfo, _ int) BucketResponse {
 			return BucketResponse{
 				Name:      bucket.Name,
-				CreatedAt: bucket.CreationDate.Time,
+				Owner:     bucket.Owner,
+				CreatedAt: bucket.CreatedAt,
 			}
 		}),
 	}
@@ -87,7 +89,7 @@ func (s *Services) listBuckets(c *echo.Context) error {
 
 func (s *Services) createBucket(c *echo.Context) error {
 	var req CreateBucketRequest
-	if err := bindJSON(c, &req); err != nil {
+	if err := bindJSON(c, s.log, &req); err != nil {
 		return err
 	}
 	name := strings.TrimSpace(req.Name)
@@ -97,11 +99,30 @@ func (s *Services) createBucket(c *echo.Context) error {
 	if err := s3.ValidateBucketName(name); err != nil {
 		return api.SendValidation(c, api.TypeBucketCreateFailed, err.Error())
 	}
-	b, accessKey, err := s.requireBackend(c)
+	b, err := s.requireBackendOnly(c)
 	if err != nil {
 		return err
 	}
+	accessKey, err := s.adminAccessKey()
+	if err != nil {
+		s.sendErr(c, func() error { return api.SendNotReady(c, api.TypeBackendNotInitialized, err.Error(), nil) })
+		return errResponseSent
+	}
+	// If an owner is specified, resolve that user's access key instead of
+	// the default admin key so the bucket is owned by the selected user.
+	if owner := strings.TrimSpace(req.Owner); owner != "" {
+		accessKey, err = s.accessKeyForUser(owner)
+		if err != nil {
+			return api.SendValidation(c, api.TypeBucketCreateFailed, err.Error())
+		}
+	}
 	if err := b.CreateBucket(c.Request().Context(), accessKey, name); err != nil {
+		if errors.Is(err, s3errs.ErrBucketAlreadyExists) {
+			return api.SendConflict(c, api.TypeBucketCreateFailed, "A bucket named \""+name+"\" already exists. Bucket names are globally unique; choose a different name.")
+		}
+		if errors.Is(err, s3errs.ErrBucketAlreadyOwnedByYou) {
+			return api.SendConflict(c, api.TypeBucketCreateFailed, "You already own a bucket named \""+name+"\".")
+		}
 		return api.SendInternal(c, api.TypeBucketCreateFailed, "failed to create bucket", err)
 	}
 
@@ -156,7 +177,7 @@ func (s *Services) putBucketVersioning(c *echo.Context) error {
 		return err
 	}
 	var req SetBucketVersioningRequest
-	if err := bindJSON(c, &req); err != nil {
+	if err := bindJSON(c, s.log, &req); err != nil {
 		return err
 	}
 	status := strings.TrimSpace(req.Status)
@@ -198,7 +219,7 @@ func (s *Services) putBucketLifecycle(c *echo.Context) error {
 		return err
 	}
 	var req LifecycleConfigJSON
-	if err := bindJSON(c, &req); err != nil {
+	if err := bindJSON(c, s.log, &req); err != nil {
 		return err
 	}
 	// validate rules

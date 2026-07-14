@@ -10,8 +10,6 @@ import (
 	"github.com/samber/lo"
 	"go.lumeweb.com/s3-server/internal/api"
 	"go.lumeweb.com/s3-server/internal/backend"
-	"go.lumeweb.com/s3-server/internal/status"
-	"go.lumeweb.com/s3-server/internal/views"
 	"go.uber.org/zap"
 )
 
@@ -21,8 +19,8 @@ func (s *Services) listKeys(c *echo.Context) error {
 		Keys: lo.Map(keys, func(kp backend.AccessKeyInfo, _ int) AccessKeyResponse {
 			return AccessKeyResponse{
 				AccessKey: kp.AccessKeyID,
+				SecretKey: kp.SecretKey,
 				UserName:  kp.UserName,
-				// SecretKey intentionally omitted — never expose after creation
 			}
 		}),
 	}
@@ -31,7 +29,7 @@ func (s *Services) listKeys(c *echo.Context) error {
 
 func (s *Services) addKey(c *echo.Context) error {
 	var req AddAccessKeyRequest
-	if err := bindJSON(c, &req); err != nil {
+	if err := bindJSON(c, s.log, &req); err != nil {
 		return err
 	}
 
@@ -76,7 +74,7 @@ func (s *Services) addKey(c *echo.Context) error {
 
 	targetUser := req.UserName
 	if targetUser == "" {
-		targetUser = backend.DefaultUserName
+		return api.SendValidation(c, api.TypeAccessKeyMissing, "user_name is required")
 	}
 
 	// ensure the target user exists; ignore already-exists errors.
@@ -103,16 +101,6 @@ func (s *Services) addKey(c *echo.Context) error {
 	// notify SSE clients of the key change
 	if s.sseBroker != nil {
 		s.sseBroker.NotifyKeyChange("created", updatedCount)
-	}
-
-	// HTMX request — return updated key list HTML
-	if isHTMXRequest(c) {
-		groups := s.groupedKeys()
-		running := false
-		if s.backendStatus != nil {
-			running = s.backendStatus() == status.Running
-		}
-		return views.KeyList(groups, true, running).Render(c.Request().Context(), c.Response())
 	}
 
 	return c.JSON(http.StatusCreated, AddAccessKeyResponse{
@@ -173,16 +161,6 @@ func (s *Services) deleteKey(c *echo.Context) error {
 		s.sseBroker.NotifyKeyChange("deleted", remainingCount)
 	}
 
-	// HTMX request — return updated key list HTML
-	if isHTMXRequest(c) {
-		groups := s.groupedKeys()
-		running := false
-		if s.backendStatus != nil {
-			running = s.backendStatus() == status.Running
-		}
-		return views.KeyList(groups, true, running).Render(c.Request().Context(), c.Response())
-	}
-
 	return c.NoContent(http.StatusNoContent)
 }
 
@@ -200,7 +178,7 @@ func (s *Services) listUsers(c *echo.Context) error {
 
 func (s *Services) createUser(c *echo.Context) error {
 	var req UserResponse
-	if err := bindJSON(c, &req); err != nil {
+	if err := bindJSON(c, s.log, &req); err != nil {
 		return err
 	}
 	name := strings.TrimSpace(req.Name)
@@ -225,9 +203,6 @@ func (s *Services) deleteUser(c *echo.Context) error {
 	if err != nil {
 		return err
 	}
-	if name == backend.DefaultUserName {
-		return api.SendValidation(c, api.TypeCannotDeleteDefaultUser, "cannot delete the default user")
-	}
 	ks, err := s.requireKeyStore(c)
 	if err != nil {
 		return err
@@ -242,7 +217,7 @@ func (s *Services) deleteUser(c *echo.Context) error {
 
 	// No backend restart needed: s3d reads credentials from the SQLite store
 	// on every request via LoadSecret/UserNameForAccessKey. Deleted users and
-	// their access keys are immediately invalid — no in-memory cache to flush.
+	// their access keys are immediately invalid: no in-memory cache to flush.
 
 	// notify SSE clients of the key change
 	if s.sseBroker != nil {
@@ -270,8 +245,8 @@ func (s *Services) listUserKeys(c *echo.Context) error {
 		Keys: lo.Map(keys, func(kp backend.AccessKeyInfo, _ int) AccessKeyResponse {
 			return AccessKeyResponse{
 				AccessKey: kp.AccessKeyID,
+				SecretKey: kp.SecretKey,
 				UserName:  kp.UserName,
-				// SecretKey intentionally omitted — never expose after creation
 			}
 		}),
 	}
