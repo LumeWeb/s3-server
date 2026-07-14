@@ -46,7 +46,7 @@ func (s *Services) setS3Config(c *echo.Context) error {
 	if err := s.store.SetS3Config(config.S3Config{
 		Directory:          req.Directory,
 		IndexerURL:         req.IndexerURL,
-		AvailableIndexers:  req.AvailableIndexers,
+		AvailableIndexers:  current.AvailableIndexers,
 		HostBases:          req.HostBases,
 		DiskUsageLimit:     req.DiskUsageLimit,
 		UploadWastePct:     req.UploadWastePct,
