@@ -74,6 +74,7 @@ func (s *Services) addKey(c *echo.Context) error {
 
 	targetUser := req.UserName
 	if targetUser == "" {
+		s.keyMu.Unlock()
 		return api.SendValidation(c, api.TypeAccessKeyMissing, "user_name is required")
 	}
 
