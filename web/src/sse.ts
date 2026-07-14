@@ -1,7 +1,5 @@
 // --- Toast ---
 
-import { ERROR_MESSAGES } from './api'
-
 let toastTimer: ReturnType<typeof setTimeout> | null = null
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -34,6 +32,7 @@ export function initToast(Alpine: any) {
     window.__sseProcessing!(processingMsg)
     try {
       const result = await fn()
+      if (result === undefined) return result // error already handled by handleReq
       if (successMsg) { window.__sseToast!(successMsg, 'success') }
       return result
     } catch (e: any) {
@@ -41,52 +40,55 @@ export function initToast(Alpine: any) {
       throw e
     }
   }
-}
 
-// --- htmx progress bar + error handling ---
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function initHtmx(Alpine: any) {
-  const bar = document.getElementById('htmx-indicator')
-  const toast = document.getElementById('sse-toast')
-
-  if (bar) {
-    document.body.addEventListener('htmx:beforeRequest', () => {
-      bar.style.opacity = '1'
-      bar.style.width = '0%'
-      bar.style.transition = 'width 0.3s ease'
-      bar.style.width = '70%'
-    })
-    document.body.addEventListener('htmx:afterRequest', () => {
-      bar.style.width = '100%'
-      setTimeout(() => { bar.style.opacity = '0' }, 200)
-    })
+  // DRY helper: reload after a short delay (lets success toasts finish).
+  // Usage in templ: window.__reloadAfter()
+  window.__reloadAfter = function (ms?: number) {
+    setTimeout(() => window.location.reload(), ms ?? 800)
   }
 
-  document.body.addEventListener('htmx:responseError', (e: Event) => {
-    if (!toast) return
-    const alpine = (Alpine as any).$data(toast)
-    alpine.msg = 'Request failed'
-    const detail = (e as any).detail
-    if (detail && detail.xhr) {
-      try {
-        const d = JSON.parse(detail.xhr.responseText)
-        const type = d.type || ''
-        alpine.msg = (ERROR_MESSAGES as Record<string, string>)[type] || d.message || d.error || 'Request failed'
-      } catch (_) { /* not JSON */ }
+  // DRY helper: copy text to clipboard with HTTP fallback for non-secure contexts.
+  // Uses navigator.clipboard when available (HTTPS/localhost), falls back to
+  // hidden textarea + execCommand('copy') for HTTP.
+  // Usage in templ: window.__copyToClipboard('value', 'Copied ID')
+  window.__copyToClipboard = async function (text: string, successMsg?: string) {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text)
+      } else {
+        const ta = document.createElement('textarea')
+        ta.value = text
+        ta.style.position = 'fixed'
+        ta.style.left = '-9999px'
+        document.body.appendChild(ta)
+        ta.select()
+        document.execCommand('copy')
+        document.body.removeChild(ta)
+      }
+      window.__sseToast!(successMsg || 'Copied to clipboard', 'success')
+    } catch (_) {
+      window.__sseToast!('Failed to copy', 'error')
     }
-    alpine.type = 'error'
-    alpine.show = true
-    if (toastTimer) clearTimeout(toastTimer)
-    toastTimer = setTimeout(() => { alpine.show = false }, 5000)
-  })
+  }
 
-  // CSRF header injection for htmx
-  document.addEventListener('htmx:configRequest', (event: Event) => {
-    const csrf = document.cookie.split('; ').find(row => row.startsWith('_csrf='))
-    if (csrf) {
-      (event as any).detail.headers['X-CSRF-Token'] = csrf.split('=')[1]
-    }
+  // --- Dialog confirm handler registry ---
+  //
+  // Dialog components dispatch a `dialog-confirm` CustomEvent with
+  // { source: '<showProp>' }. Instead of each page writing an inline
+  // @dialog-confirm.window="if ($event.detail?.source === '...') { ... }"
+  // handler, pages register named handlers via window.__onDialogConfirm.
+  //
+  // Registration is idempotent: re-registering replaces the handler
+  // (important for navigations that re-evaluate page scripts).
+  window.__dialogHandlers = new Map<string, () => void>()
+  window.__onDialogConfirm = function (source: string, handler: () => void) {
+    window.__dialogHandlers!.set(source, handler)
+  }
+  window.addEventListener('dialog-confirm', (e: Event) => {
+    const detail = (e as CustomEvent).detail
+    if (!detail?.source) return
+    const handler = window.__dialogHandlers!.get(detail.source)
+    if (handler) handler()
   })
 }
 
@@ -103,9 +105,7 @@ export function initSSE() {
     // Skip SSE on pages where the user isn't authenticated yet
     if (document.querySelector('[data-onboarding]') || document.querySelector('[data-login]')) return
 
-    // Prevent multiple EventSource connections — if __api:ready fires
-    // more than once (e.g. after htmx boosted navigation re-evaluates scripts),
-    // don't create a new EventSource.
+    // Prevent multiple EventSource connections
     if (sseInitialized) return
     sseInitialized = true
 

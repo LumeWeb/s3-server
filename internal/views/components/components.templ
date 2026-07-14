@@ -1,0 +1,185 @@
+package components
+
+import "fmt"
+
+// CopyButton renders a button that copies the given (server-side) value to the
+// clipboard and shows a toast. Uses the global __copyToClipboard helper which
+// falls back to execCommand('copy') on non-secure (HTTP) contexts.
+templ CopyButton(value string, label string) {
+	<button
+		type="button"
+		class="link-action"
+		@click={ fmt.Sprintf("window.__copyToClipboard('%s', 'Copied %s')", jsEscape(value), jsEscape(label)) }
+	>
+		Copy { label }
+	</button>
+}
+
+// PasswordToggle renders a show/hide password button with heroicons eye/eye-off
+// SVGs. Toggles the Alpine `showPw` reactive property.
+templ PasswordToggle() {
+	<button
+		type="button"
+		@click="showPw = !showPw"
+		class="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-primary transition-colors"
+		:aria-label="showPw ? 'Hide password' : 'Show password'"
+	>
+		<svg x-show="!showPw" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+			<path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"></path>
+			<path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+		</svg>
+		<svg x-show="showPw" x-cloak class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+			<path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.243 4.243L9.88 9.88"></path>
+		</svg>
+	</button>
+}
+
+// PasswordField is a composite of FormRow + password input + PasswordToggle.
+// The showPw Alpine property must be declared on the parent x-data.
+templ PasswordField(label string, id string, placeholder string, autocomplete string, extraAttrs templ.Attributes) {
+	@FormRow(label, id, "") {
+		<div class="relative">
+			<input
+				:type="showPw ? 'text' : 'password'"
+				id={ id }
+				required
+				autocomplete={ autocomplete }
+				class="form-input pr-10"
+				placeholder={ placeholder }
+				{ extraAttrs... }
+			/>
+			@PasswordToggle()
+		</div>
+	}
+}
+
+// Select renders a <select> with x-model binding and server-side pre-selection.
+// The value parameter sets which <option> gets the `selected` attribute server-side,
+// preventing FOUC where the browser shows the first option before Alpine initializes.
+templ Select(value string, opts SelectOpts) {
+	{{
+		cls := opts.Class
+		if cls == "" {
+			cls = "form-select"
+		}
+	}}
+	<select
+		x-model={ opts.Model }
+		class={ cls }
+		{ opts.Extra... }
+	>
+		for _, opt := range opts.Options {
+			<option value={ opt.Value } selected={ templ.Bool(opt.Value == value) }>{ opt.Label }</option>
+		}
+	</select>
+}
+
+// DynamicSelect renders a <select> whose options are populated client-side via
+// Alpine x-for. When ModelValue is non-empty, renders a server-side <option> for
+// it (pre-selected) so the correct value shows before Alpine initializes.
+// Then an x-for template for dynamic options, then any static trailing options.
+templ DynamicSelect(opts DynamicSelectOpts) {
+	{{
+		cls := opts.Class
+		if cls == "" {
+			cls = "form-select"
+		}
+	}}
+	<select
+		x-model={ opts.Model }
+		class={ cls }
+		{ opts.Extra... }
+	>
+		if opts.ModelValue != "" {
+			<option value={ opts.ModelValue } selected>{ opts.ModelValue }</option>
+		}
+		<template x-for={ fmt.Sprintf("(item, i) in %s", opts.ItemsExpr) } :key="i">
+			<option :value="item" x-text="item"></option>
+		</template>
+		for _, opt := range opts.StaticOptions {
+			<option value={ opt.Value }>{ opt.Label }</option>
+		}
+	</select>
+}
+
+// InputField renders a FormRow + <input> with x-model binding. Handles the
+// common case of a labeled text/number/email/url input with a hint.
+templ InputField(opts InputFieldOpts) {
+	@FormRow(opts.Label, opts.ID, opts.Hint) {
+		{{
+			cls := opts.Class
+			if cls == "" {
+				cls = "form-input"
+			}
+			inputType := opts.Type
+			if inputType == "" {
+				inputType = "text"
+			}
+			modelAttr := "x-model"
+			if inputType == "number" {
+				modelAttr = "x-model.number"
+			}
+		}}
+		<input
+			type={ inputType }
+			id={ opts.ID }
+			{ templ.Attributes{ modelAttr: opts.Model }... }
+			class={ cls }
+			placeholder={ opts.Placeholder }
+			{ opts.Extra... }
+		/>
+	}
+}
+
+// SaveButton renders a right-aligned Save button inside a form. It's a
+// convenience wrapper around Button with a fixed layout container.
+templ SaveButton(loadingProp string) {
+	<div class="flex items-center justify-end gap-3">
+		@Button("Save", ButtonOpts{Type: "submit", Class: "btn-sm", LoadingProp: loadingProp, LoadingLabel: "Saving…", Disabled: loadingProp})
+	</div>
+}
+
+// Button renders a button with explicit type, optional loading state, and
+// optional @click handler. Type defaults to "button"; callers MUST pass
+// opts.Type = "submit" for form submit buttons.
+//
+// When opts.LoadingProp is non-empty, renders two spans: idle label (shown
+// when loadingProp is falsy) and spinner + loadingLabel (shown when truthy).
+// When empty, renders a static button with just the label.
+templ Button(label string, opts ButtonOpts) {
+	<button
+		type={ opts.Type }
+		class={ opts.Class }
+		if opts.Disabled != "" {
+			:disabled={ opts.Disabled }
+		}
+		if opts.OnClick != "" {
+			@click={ opts.OnClick }
+		}
+		{ opts.Extra... }
+	>
+		if opts.LoadingProp != "" {
+			<span x-show={ "!" + opts.LoadingProp } x-cloak>{ label }</span>
+			<span
+				x-show={ opts.LoadingProp }
+				x-cloak
+				class="flex items-center justify-center gap-1.5"
+				aria-live="polite"
+			>
+				<span class="spin"></span>
+				{ opts.LoadingLabel }
+			</span>
+		} else {
+			{ label }
+		}
+	</button>
+}
+
+// PoweredBy renders a "Powered by Pinner" badge with a link to pinner.xyz
+// and the slogan.
+templ PoweredBy() {
+	<p class="text-center text-xs text-muted-foreground mt-6">
+		Powered by <a href="https://pinner.xyz" target="_blank" rel="noopener" class="text-primary hover:text-primary/80 transition-colors font-medium">Pinner</a>
+		: Your data. Your rules.
+	</p>
+}

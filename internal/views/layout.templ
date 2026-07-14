@@ -1,6 +1,9 @@
 package views
 
-import "go.lumeweb.com/s3-server/internal/routes"
+import (
+	"go.lumeweb.com/s3-server/internal/routes"
+	"go.lumeweb.com/s3-server/internal/views/components"
+)
 
 templ Base(title string, content templ.Component) {
 	<!DOCTYPE html>
@@ -13,13 +16,16 @@ templ Base(title string, content templ.Component) {
 			<link rel="apple-touch-icon" href="/favicon.svg"/>
 			<meta name="theme-color" content="#0d1d1c"/>
 			<meta name="application-name" content="S3"/>
-			<link rel="stylesheet" href="/_panel/assets/tailwind.css"/>
-			<link rel="stylesheet" href="/_panel/assets/panel.css"/>
+			<link rel="stylesheet" href={ templ.SafeURL("/_panel/assets/tailwind.css?v=" + AssetVersion) }/>
+			<link rel="stylesheet" href={ templ.SafeURL("/_panel/assets/panel.css?v=" + AssetVersion) }/>
 			<style>
 				/* critical CSS: prevents FOUC before the linked stylesheet loads */
 				[x-cloak]{display:none!important}
 				html{background:#0d1d1c;color:#f8f8f8;font-family:"Poppins",ui-sans-serif,system-ui,sans-serif}
 				body{margin:0;min-height:100vh}
+				/* prevent footer flicker: apply flex layout before Tailwind loads */
+				.page-layout{display:flex;flex-direction:column;min-height:100vh}
+				.page-layout>main{flex:1 1 auto}
 			</style>
 		</head>
 		<body class="bg-background text-foreground font-body min-h-screen">
@@ -28,7 +34,7 @@ templ Base(title string, content templ.Component) {
 					<div class="card w-full max-w-lg p-8 text-center">
 						<div class="flex items-center justify-center space-x-3 mb-6">
 							<div class="h-10 w-10 text-primary">
-								@Logo()
+								@components.Logo()
 							</div>
 							<h1 class="text-2xl font-bold font-display text-primary">S3</h1>
 						</div>
@@ -48,13 +54,8 @@ templ Base(title string, content templ.Component) {
 					window.addEventListener('__api:ready', () => resolve());
 				});
 			</script>
-			<script type="module" src="/_panel/assets/panel.js"></script>
+			<script type="module" src={ templ.SafeURL("/_panel/assets/panel.js?v=" + AssetVersion) }></script>
 			@content
-			<div
-				id="htmx-indicator"
-				class="fixed top-0 left-0 right-0 h-0.5 bg-primary z-[60] opacity-0 transition-opacity"
-				style="width: 100%; transform-origin: left;"
-			></div>
 			<div
 				id="sse-toast"
 				class="fixed bottom-4 right-4 z-[70]"
@@ -86,101 +87,35 @@ templ Base(title string, content templ.Component) {
 				</div>
 			</div>
 			<!-- Global confirm dialog (replaces native hx-confirm) -->
-			<div
-				id="confirm-dialog"
-				class="fixed inset-0 z-[80] flex items-center justify-center bg-black/50"
-				x-data="{ show: false, title: 'Confirm', message: '', detail: '', variant: 'warning', resolve: null }"
-				x-show="show"
-				x-cloak
-				role="dialog"
-				aria-modal="true"
-				aria-labelledby="confirm-dialog-title"
-				@click.self="if (resolve) { resolve(false); show = false }"
-				x-transition.opacity
-				@keydown.escape.window="if (show && resolve) { resolve(false); show = false }"
-			>
-				<div class="card w-full max-w-md p-6 shadow-xl">
-					<div class="flex items-start gap-4">
-						<div class="flex-shrink-0 mt-0.5">
-							<svg x-show="variant === 'danger'" class="h-7 w-7 text-destructive" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-								<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.75 1.5c0 1.164.5 2.25 1.5 3 1.5 1 3.5 1 5.25 1.5 1.75.5 3.75.5 5.25 0 1.5-.5 3.75-.5 5.25-1.5 1-.75 1.5-1.836 1.5-3 0-1.164-.5-2.25-1.5-3-1.5-1-3.5-1-5.25-1.5-1.75-.5-3.75-.5-5.25 0-1.5.5-3.75.5-5.25 1.5-1 .75-1.5 1.836-1.5 3z"></path>
-							</svg>
-							<svg x-show="variant === 'info'" class="h-7 w-7 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-								<path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"></path>
-							</svg>
-							<svg x-show="variant !== 'danger' && variant !== 'info'" class="h-7 w-7 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-								<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.75 1.5c0 1.164.5 2.25 1.5 3 1.5 1 3.5 1 5.25 1.5 1.75.5 3.75.5 5.25 0 1.5-.5 3.75-.5 5.25-1.5 1-.75 1.5-1.836 1.5-3 0-1.164-.5-2.25-1.5-3-1.5-1-3.5-1-5.25-1.5-1.75-.5-3.75-.5-5.25 0-1.5.5-3.75.5-5.25 1.5-1 .75-1.5 1.836-1.5 3z"></path>
-							</svg>
-						</div>
-						<div class="flex-1 min-w-0">
-							<h3 id="confirm-dialog-title" class="text-lg font-bold text-foreground font-display" x-text="title || 'Confirm'"></h3>
-							<p class="mt-2 text-sm text-muted-foreground font-body break-words" x-text="message"></p>
-							<template x-if="detail">
-								<p class="mt-1 text-xs text-muted-foreground font-body" x-text="detail"></p>
-							</template>
-						</div>
-					</div>
-					<div class="mt-6 flex justify-end gap-2">
-						<button
-							type="button"
-							class="btn-ghost px-4 py-2 text-sm"
-							@click="if (resolve) { resolve(false) }; show = false"
-						>Cancel</button>
-						<button
-							type="button"
-							:class="variant === 'danger' ? 'btn-danger' : 'btn-primary'"
-							class="px-4 py-2 text-sm"
-							@click="if (resolve) { resolve(true) }; show = false"
-							x-text="variant === 'danger' ? 'Delete' : 'Confirm'"
-						></button>
-					</div>
-				</div>
-			</div>
+			@components.ConfirmDialog()
 			<!-- Critical error dialog (INTERNAL_ERROR, NOT_READY, etc.) -->
-			<div
-				id="error-dialog"
-				class="fixed inset-0 z-[80] flex items-center justify-center bg-black/50"
-				x-data="{ show: false, title: '', message: '', detail: '' }"
-				x-show="show"
-				x-cloak
-				role="dialog"
-				aria-modal="true"
-				aria-labelledby="error-dialog-title"
-				@click.self="show = false"
-				x-transition.opacity
-			>
-				<div class="card w-full max-w-md p-6 shadow-xl">
-					<div class="flex items-start gap-4">
-						<div class="flex-shrink-0 mt-0.5">
-							<svg class="h-7 w-7 text-destructive" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-								<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.75 1.5c0 1.164.5 2.25 1.5 3 1.5 1 3.5 1 5.25 1.5 1.75.5 3.75.5 5.25 0 1.5-.5 3.75-.5 5.25-1.5 1-.75 1.5-1.836 1.5-3 0-1.164-.5-2.25-1.5-3-1.5-1-3.5-1-5.25-1.5-1.75-.5-3.75-.5-5.25 0-1.5.5-3.75.5-5.25 1.5-1 .75-1.5 1.836-1.5 3z"></path>
-							</svg>
-						</div>
-						<div class="flex-1 min-w-0">
-							<h3 id="error-dialog-title" class="text-lg font-bold text-foreground font-display" x-text="title || 'Something went wrong'"></h3>
-							<p class="mt-2 text-sm text-muted-foreground font-body break-words" x-text="message"></p>
-							<template x-if="detail">
-								<pre class="mt-3 text-xs text-muted-foreground bg-muted/50 rounded p-2 overflow-x-auto font-mono" x-text="detail"></pre>
-							</template>
-						</div>
-					</div>
-					<div class="mt-6 flex justify-end gap-2">
-						<button
-							type="button"
-							class="btn-primary px-4 py-2 text-sm"
-							@click="show = false"
-						>Dismiss</button>
-					</div>
-				</div>
-			</div>
+			@components.ErrorDialog()
 		</body>
 	</html>
 }
 
+// PageLayout wraps Base with Nav + page content + PoweredBy footer.
+// Use this for all authenticated dashboard pages instead of @Base directly.
+templ PageLayout(title string, activePage string, version string, csrfToken string, content templ.Component) {
+	@Base(title, PageLayoutContent(activePage, version, csrfToken, content))
+}
+
+templ PageLayoutContent(activePage string, version string, csrfToken string, content templ.Component) {
+	<div class="page-layout min-h-screen flex flex-col">
+		@Nav(activePage, version, csrfToken)
+		<main class="flex-1">
+			@content
+		</main>
+		<footer class="py-4 px-6 border-t border-border bg-card">
+			@components.PoweredBy()
+		</footer>
+	</div>
+}
+
 templ Nav(activePage string, version string, csrfToken string) {
-	<nav class="bg-card border-b border-border">
+	<nav class="bg-card border-b border-border" x-data="navFlushApp" @dialog-confirm.window="$event.detail?.source === 'showFlush' && confirmFlush()">
 		<div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-			@LogoTitle("S3", false)
+			@components.LogoTitle("S3", false)
 			<div class="flex items-center gap-1">
 				@navLink("dashboard", activePage, routes.PanelDashboard, "Dashboard")
 				<div class="nav-sep"></div>
@@ -197,7 +132,7 @@ templ Nav(activePage string, version string, csrfToken string) {
 					type="button"
 					class="btn-ghost text-sm px-2 py-1"
 					title="Force-upload all buffered objects to the Sia network and pin them. This is a system-wide operation and does not delete any data."
-					@click="window.__sseAction && window.__sseAction('Flushing pending objects…', () => window.__api.post('/_panel/api/system/flush'), 'All pending objects flushed to the network')"
+					@click="showFlush = true"
 				>
 					Flush
 				</button>
@@ -210,6 +145,7 @@ templ Nav(activePage string, version string, csrfToken string) {
 				</form>
 			</div>
 		</div>
+		@components.Dialog("showFlush", "Flush Pending Objects", "This will force-upload all buffered objects to the Sia network and pin them. This is a system-wide operation and does not delete any data.", "Flush", "btn-primary")
 	</nav>
 }
 

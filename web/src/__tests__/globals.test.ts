@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // Test the globals.ts typed accessors.
 // We can't import globals.ts directly because it calls window getters that
 // reference runtime singletons. Instead, we test the behavior the accessors
-// provide — that calling api(), toast(), etc. delegates to the window globals.
+// provide: that calling api(), toast(), etc. delegates to the window globals.
 
 describe('globals accessors', () => {
   beforeEach(() => {

@@ -1,11 +1,11 @@
-// MSW request handlers — intercepts HTTP requests during tests.
+// MSW request handlers: intercepts HTTP requests during tests.
 // Each handler mocks a Panel API endpoint, matching the paths used by api.ts.
 
 import { http, HttpResponse } from 'msw'
 
-// Default handlers — tests can override these with server.use()
+// Default handlers: tests can override these with server.use()
 export const handlers = [
-  // Status endpoint — returns "running" by default
+  // Status endpoint: returns "running" by default
   http.get('/_panel/api/status', () =>
     HttpResponse.json({
       s3_status: 'running',

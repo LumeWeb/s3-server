@@ -3,28 +3,25 @@ package views
 import (
 	"fmt"
 	"go.lumeweb.com/s3-server/internal/config"
-	"go.lumeweb.com/s3-server/internal/views/js"
+	"go.lumeweb.com/s3-server/internal/views/components"
 )
 
 templ Keys(groups []UserKeyGroup, csrfToken string, backendRunning bool) {
-	@Base("Access Keys", KeysContent(groups, csrfToken, backendRunning))
+	@PageLayout("Access Keys", "keys", "", csrfToken, KeysContent(groups, csrfToken, backendRunning))
 }
 
 templ KeysContent(groups []UserKeyGroup, csrfToken string, backendRunning bool) {
-	<div class="min-h-screen" x-data="{ showDelete: false, deleteAccessKey: '', generating: false }" @dialog-confirm.window="if ($event.detail?.source === 'showDelete') { window.__sseAction('Deleting access key…', () => window.__api.del('/_panel/api/keys/' + encodeURIComponent(deleteAccessKey)), 'Access key deleted').then(() => setTimeout(() => window.location.reload(), 500)).catch(() => {}); }">
-		@Nav("keys", "", csrfToken)
-		<div class="max-w-5xl mx-auto px-4 py-6 space-y-6">
-			<div class="card">
-				<div class="card-header">
-					<h2 class="font-bold font-display text-foreground">Access Keys</h2>
-					<p class="text-xs text-muted-foreground font-body mt-0.5">S3 credentials for programmatic access, grouped by user</p>
-				</div>
-				<div id="keys-list" class="divide-y divide-surface-border">
-					@KeyList(groups, true, backendRunning)
-				</div>
+	<div class="max-w-5xl mx-auto px-4 py-6 space-y-6" x-data={ fmt.Sprintf("keysApp({ backendRunning: %t })", backendRunning) } @dialog-confirm.window="$event.detail?.source === 'showDelete' && confirmDelete()">
+		<div class="card">
+			<div class="card-header">
+				<h2 class="font-bold font-display text-foreground">Access Keys</h2>
+				<p class="text-xs text-muted-foreground font-body mt-0.5">S3 credentials for programmatic access, grouped by user</p>
+			</div>
+			<div id="keys-list" class="divide-y divide-surface-border">
+				@KeyList(groups, true, backendRunning)
 			</div>
 		</div>
-		@Dialog("showDelete", "Delete Access Key", "Delete this access key? The key will stop working immediately.", "Delete", "btn-danger")
+		@components.Dialog("showDelete", "Delete Access Key", "Delete this access key? The key will stop working immediately.", "Delete", "btn-danger")
 	</div>
 }
 
@@ -42,23 +39,22 @@ templ UserKeySection(g UserKeyGroup, showGenerate bool, backendRunning bool) {
 					{ userInitial(g.UserName) }
 				</div>
 				<span class="text-sm font-display text-foreground">{ g.UserName }</span>
-				if g.IsDefault {
-					<span class="text-[10px] font-body text-muted-foreground bg-border/30 rounded px-1.5 py-0.5">default</span>
-				}
 				<span class="text-xs font-body text-muted-foreground">
-					{ countWord(len(g.Keys), "key") }
+					{ components.CountWord(len(g.Keys), "key") }
+					if g.BucketCount > 0 {
+						<span class="ml-1">· { components.CountWord(g.BucketCount, "bucket") }</span>
+					}
 				</span>
 			</div>
 			if showGenerate {
-				<button
-					type="button"
-					class="btn-primary text-xs px-3 py-1"
-					:disabled="generating || !backendRunning"
-					@click={ fmt.Sprintf("generating = true; window.__sseAction('Generating key…', () => window.__api.post('/_panel/api/keys', { user_name: '%s' }), 'Access key generated').then(() => setTimeout(() => window.location.reload(), 500)).catch(() => { generating = false; })", jsEscape(g.UserName)) }
-				>
-					<span x-show="!generating">+ Generate Key</span>
-					<span x-show="generating" x-cloak class="flex items-center gap-1.5"><span class="spin"></span> Generating…</span>
-				</button>
+				@components.Button("+ Generate Key", components.ButtonOpts{
+					Type:         "button",
+					Class:        "btn-primary text-xs px-3 py-1",
+					OnClick:      fmt.Sprintf("generateKey('%s')", components.JsEscape(g.UserName)),
+					LoadingProp:  fmt.Sprintf("generating['%s']", components.JsEscape(g.UserName)),
+					LoadingLabel: "Generating…",
+					Disabled:     fmt.Sprintf("generating['%s'] || !backendRunning", components.JsEscape(g.UserName)),
+				})
 			}
 		</div>
 		if len(g.Keys) == 0 {
@@ -82,28 +78,16 @@ templ KeyRow(kp config.KeyPair) {
 			</div>
 			<div class="flex items-center gap-2">
 				<span class="text-[10px] font-body text-muted-foreground shrink-0 w-20">Secret Key</span>
-				<code class="font-display text-xs text-muted-foreground truncate">{ maskKey(kp.SecretKey) }</code>
+				<code class="font-display text-xs text-muted-foreground truncate">{ components.MaskKey(kp.SecretKey) }</code>
 			</div>
 		</div>
 		<div class="flex items-center gap-1 shrink-0">
-			<button
-				type="button"
-				class="link-action"
-				_={ js.CopyToClipboard(kp.AccessKey, "Access Key ID") }
-			>
-				Copy ID
-			</button>
-			<button
-				type="button"
-				class="link-action"
-				_={ js.CopyToClipboard(kp.SecretKey, "Secret Key") }
-			>
-				Copy Secret
-			</button>
+			@components.CopyButton(kp.AccessKey, "ID")
+			@components.CopyButton(kp.SecretKey, "Secret")
 			<button
 				type="button"
 				class="link-danger"
-				@click={ fmt.Sprintf("deleteAccessKey = '%s'; showDelete = true", jsEscape(kp.AccessKey)) }
+				@click={ fmt.Sprintf("deleteAccessKey = '%s'; showDelete = true", components.JsEscape(kp.AccessKey)) }
 			>
 				Delete
 			</button>

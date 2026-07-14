@@ -71,7 +71,7 @@
     @apply bg-primary text-primary-foreground hover:enabled:bg-secondary hover:enabled:text-secondary-foreground disabled:bg-secondary/40 disabled:text-foreground/60 disabled:cursor-not-allowed rounded-md font-bold font-display transition-colors cursor-pointer;
 }
 @utility btn-danger {
-    @apply bg-destructive/10 hover:bg-destructive/20 text-destructive border border-destructive/30 rounded-md font-bold font-display transition-colors cursor-pointer;
+    @apply bg-destructive/10 hover:bg-destructive/20 text-destructive border border-destructive/30 rounded-md font-bold font-display transition-colors cursor-pointer py-2 px-4;
 }
 @utility btn-full {
     @apply btn-primary w-full py-2 px-4;
@@ -95,7 +95,7 @@
     @apply text-primary hover:text-primary/80 font-bold font-display text-sm transition-colors cursor-pointer;
 }
 @utility btn-secondary {
-    @apply bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded-md font-bold font-display transition-colors cursor-pointer;
+    @apply bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded-md font-bold font-display transition-colors cursor-pointer py-2 px-4;
 }
 @utility step-heading {
     @apply text-lg font-bold font-display text-foreground mb-2;

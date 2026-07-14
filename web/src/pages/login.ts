@@ -1,4 +1,4 @@
-// Login page — Alpine component registered as global for x-data binding.
+// Login page: Alpine component registered as global for x-data binding.
 // Validation errors use toast (per UX rules); critical failures use modal.
 
 import type { Alpine } from 'alpinejs'
@@ -7,6 +7,7 @@ import { toast } from '../globals'
 export function initLogin(Alpine: Alpine) {
   Alpine.data('loginForm', () => ({
     loading: false,
+    showPw: false,
 
     async submit(e: SubmitEvent) {
       e.preventDefault()
@@ -29,10 +30,10 @@ export function initLogin(Alpine: Alpine) {
         if (resp.status === 401) {
           toast('Incorrect password', 'error')
         } else {
-          toast('Login failed — please try again', 'error')
+          toast('Login failed: please try again', 'error')
         }
       } catch {
-        toast('Network error — check your connection', 'error')
+        toast('Network error: check your connection', 'error')
       }
       this.loading = false
     },

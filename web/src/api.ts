@@ -18,7 +18,7 @@ export function withCsrf(opts: Record<string, any> = {}) {
 // Error type → human-readable message map.
 // Populated from Go-side ErrorType constants (internal/api/errors.go).
 export const ERROR_MESSAGES: Record<string, string> = Object.fromEntries([
-  // — Internal errors —
+  // Internal errors
   ['DATABASE_OPEN_FAILED', 'The server could not access its database. Check that the data directory exists and has correct permissions.'],
   ['DATABASE_STORE_FAILED', 'The server failed to save data to the database. Check disk space and permissions.'],
   ['SQLITE_NOT_INITIALIZED', 'The database has not been initialized. Complete the onboarding flow first.'],
@@ -49,7 +49,7 @@ export const ERROR_MESSAGES: Record<string, string> = Object.fromEntries([
   ['INVALID_REQUEST_URL', 'The request URL was invalid.'],
   ['BACKUP_DIR_CREATE_FAILED', 'Failed to create the backups directory. Check permissions.'],
   ['BACKUP_PATH_CHECK_FAILED', 'Failed to verify the backup path.'],
-  // — Validation / bad request —
+  // Validation / bad request
   ['INVALID_REQUEST_BODY', 'The request was malformed. Please check your input and try again.'],
   ['PASSWORD_TOO_SHORT', 'Password must be at least 8 characters.'],
   ['ACCESS_KEY_MISSING', 'Access key is required.'],
@@ -60,17 +60,16 @@ export const ERROR_MESSAGES: Record<string, string> = Object.fromEntries([
   ['FILENAME_REQUIRED', 'A filename is required.'],
   ['INVALID_FILENAME', 'The filename is invalid.'],
   ['DIRECTORY_REQUIRED', 'A data directory is required.'],
-  ['INDEXER_URL_REQUIRED', 'An indexer URL is required.'],
+  ['INDEXER_URL_REQUIRED', 'The indexer URL was rejected. The host may resolve to a private address or DNS may be unavailable.'],
   ['SSL_MODE_INVALID', 'SSL mode must be none, platform, or managed.'],
   ['ACME_EMAIL_REQUIRED', 'An ACME email is required for managed SSL.'],
   ['BACKUP_NOT_FOUND', 'Backup not found.'],
   ['ACCESS_KEY_NOT_FOUND', 'Access key not found.'],
   ['CANNOT_DELETE_LAST_KEY', 'Cannot delete the last access key. At least one must remain.'],
-  ['CANNOT_DELETE_DEFAULT_USER', 'Cannot delete the default user.'],
   ['RULE_STATUS_INVALID', 'Rule status must be Enabled or Disabled.'],
   ['EXPIRATION_DAYS_INVALID', 'Expiration days must be a positive integer.'],
   ['AT_LEAST_ONE_KEY_REQUIRED', 'At least one access key is required.'],
-  // — Onboarding —
+  // Onboarding
   ['ONBOARDING_COMPLETE', 'Onboarding has already been completed.'],
   ['ONBOARDING_REQUIRED', 'Onboarding must be completed first.'],
   ['ADMIN_PASSWORD_REQUIRED', 'The admin password must be set first.'],
@@ -80,7 +79,7 @@ export const ERROR_MESSAGES: Record<string, string> = Object.fromEntries([
   ['APP_KEY_SIZE_INVALID', 'The app key must be exactly 32 bytes.'],
   ['DATA_DIRECTORY_NOT_CONFIGURED', 'The data directory is not configured. Set it in Settings.'],
   ['ADMIN_HANDLER_NOT_CONFIGURED', 'The admin handler is not configured.'],
-  // — Auth —
+  // Auth
   ['AUTH_REQUIRED', 'Authentication is required. Please log in.'],
 ])
 
@@ -109,7 +108,10 @@ export async function handleReq<T = any>(promise: Promise<T>): Promise<T | undef
     const code = body.code || ''
     const type = body.type || ''
     const rawMsg = body.message || body.error || e.message || 'Request failed'
-    const humanMsg = ERROR_MESSAGES[type] || rawMsg
+    // For conflict/validation errors, the server provides a specific
+    // user-friendly message: prefer it over the generic map.
+    const preferRaw = code === 'CONFLICT' || code === 'VALIDATION_ERROR'
+    const humanMsg = preferRaw ? rawMsg : (ERROR_MESSAGES[type] || rawMsg)
     if (DIALOG_CODES.has(code)) {
       window.dispatchEvent(new CustomEvent('__api:error', {
         detail: { code, type, message: humanMsg, raw: rawMsg },

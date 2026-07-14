@@ -1,6 +1,4 @@
-package views
-
-import "strings"
+package components
 
 templ EmptyState(message string, actionLabel string, actionHref string) {
 	<div class="px-6 py-10 text-center">
@@ -9,24 +7,12 @@ templ EmptyState(message string, actionLabel string, actionHref string) {
 		</svg>
 		<p class="mt-3 text-sm text-muted-foreground font-body">{ message }</p>
 		if actionLabel != "" && actionHref != "" {
-			if strings.HasPrefix(actionHref, "/_panel/api/") {
-				<button
-					type="button"
-					hx-post={ templ.SafeURL(actionHref) }
-					hx-target="closest div"
-					hx-swap="innerHTML"
-					class="mt-4 inline-block btn-sm text-sm"
-				>
-					{ actionLabel }
-				</button>
-			} else {
-				<a
-					href={ templ.SafeURL(actionHref) }
-					class="mt-4 inline-block btn-sm text-sm"
-				>
-					{ actionLabel }
-				</a>
-			}
+			<a
+				href={ templ.SafeURL(actionHref) }
+				class="mt-4 inline-block btn-sm text-sm"
+			>
+				{ actionLabel }
+			</a>
 		}
 	</div>
 }

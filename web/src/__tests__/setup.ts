@@ -1,4 +1,4 @@
-// Test setup — runs before every test file.
+// Test setup: runs before every test file.
 // Stubs browser-only globals that aren't available in happy-dom.
 
 import { afterAll, afterEach, beforeAll } from 'vitest'
@@ -20,6 +20,7 @@ if (typeof window !== 'undefined') {
 
   // Stub __sseToast so api.ts handleReq can call it
   window.__sseToast = () => {}
+  window.__reloadAfter = () => {}
 
   // Stub SSE globals
   window.__sseReady = false
@@ -38,7 +39,6 @@ if (typeof window !== 'undefined') {
   window.__siaSdk = undefined
   window.__siaReady = false
 
-  // Stub Alpine/htmx (not needed in most unit tests)
+  // Stub Alpine (not needed in most unit tests)
   window.Alpine = { $data: (el: unknown) => ({}), data: () => {} } as any
-  window.htmx = undefined
 }

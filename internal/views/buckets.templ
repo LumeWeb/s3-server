@@ -1,57 +1,54 @@
 package views
 
-import "fmt"
+import (
+	"fmt"
+	"go.lumeweb.com/s3-server/internal/views/components"
+)
 
-templ Buckets(buckets []BucketInfo, csrfToken string) {
-	@Base("Buckets", BucketsContent(buckets, csrfToken))
+templ Buckets(buckets []BucketInfo, users []string, csrfToken string) {
+	@PageLayout("Buckets", "buckets", "", csrfToken, BucketsContent(buckets, users, csrfToken))
 }
 
-templ BucketsContent(buckets []BucketInfo, csrfToken string) {
+templ BucketsNotReady(csrfToken string) {
+	@PageLayout("Buckets", "buckets", "", csrfToken, NotReadyContent())
+}
+
+templ NotReadyContent() {
+	@components.BackendNotReady()
+}
+
+templ BucketsContent(buckets []BucketInfo, users []string, csrfToken string) {
 	<div
-		class="min-h-screen"
+		class="max-w-5xl mx-auto px-4 py-6 space-y-6"
 		x-data="bucketPage"
-		@dialog-confirm.window="
-	if ($event.detail?.source === 'showVersioning') { confirmVersioning(); }
-"
+		@dialog-confirm.window="$event.detail?.source === 'showVersioning' && confirmVersioning()"
 	>
-		@Nav("buckets", "", csrfToken)
-		<div class="max-w-5xl mx-auto px-4 py-6 space-y-6">
-			<div class="card">
-				<div class="card-header flex items-center justify-between">
-					<div>
-						<h2 class="font-bold font-display text-foreground">Buckets</h2>
-						<p class="text-xs text-muted-foreground font-body mt-0.5">S3 buckets available for object storage</p>
-					</div>
-					<button
-						type="button"
-						class="btn-primary text-sm px-3 py-1.5"
-						@click="showCreate = true"
-					>
-						+ Create Bucket
-					</button>
+		<div class="card">
+			<div class="card-header flex items-center justify-between">
+				<div>
+					<h2 class="font-bold font-display text-foreground">Buckets</h2>
+					<p class="text-xs text-muted-foreground font-body mt-0.5">Each bucket belongs to a user. All access keys under that user share access to their buckets.</p>
 				</div>
-				<div class="px-4 pt-3 pb-1 text-xs text-muted-foreground font-body space-y-0.5">
-					<p><span class="font-medium text-foreground/70">Controls:</span></p>
-					<p><span class="font-medium text-foreground/60">Lifecycle</span> — set auto-expiry or transition rules.</p>
-					<p><span class="font-medium text-foreground/60">Versioning</span> — enable or suspend object versioning.</p>
-				</div>
-				<div id="buckets-list" class="divide-y divide-surface-border">
-					if len(buckets) == 0 {
-						@EmptyState("No buckets found. Create one to start storing objects.", "", "")
-					}
-					for _, b := range buckets {
-						@BucketRow(b)
-					}
-				</div>
+				<button
+					type="button"
+					class="btn-primary text-sm px-3 py-1.5 whitespace-nowrap"
+					@click="showCreate = true"
+				>
+					+ Create Bucket
+				</button>
+			</div>
+			<div id="buckets-list" class="divide-y divide-surface-border">
+				if len(buckets) == 0 {
+					@components.EmptyState("No buckets found. Create one to start storing objects.", "", "")
+				}
+				for _, b := range buckets {
+					@BucketRow(b)
+				}
 			</div>
 		</div>
-		<template x-if="showCreate">
-			@CreateBucketModal()
-		</template>
-		<template x-if="showLifecycle">
-			@LifecycleModal()
-		</template>
-		@Dialog("showVersioning", "Confirm Versioning Change", "Change versioning status for this bucket?", "Confirm", "btn-primary")
+		@components.CreateDialog("showCreate", "Create Bucket", "Bucket Name", "my-bucket", "S3 naming rules: lowercase, 3 to 63 chars.", "[a-z0-9][a-z0-9.-]{0,61}[a-z0-9]", "createBucket()", bucketOwnerField(users))
+		@LifecycleModal()
+		@components.Dialog("showVersioning", "Confirm Versioning Change", "Change versioning status for this bucket?", "Confirm", "btn-primary")
 	</div>
 }
 
@@ -64,9 +61,15 @@ templ BucketRow(b BucketInfo) {
 			<div class="min-w-0">
 				<div class="font-display text-sm text-foreground">{ b.Name }</div>
 				<div class="font-body text-xs text-muted-foreground">
-					{ countWord(b.ObjectCount, "object") }
-					<span class="ml-2">· { humanBytes(b.TotalSize) }</span>
-					<span class="ml-2">· { b.Versioning }</span>
+					if b.Owner != "" {
+						<span class="text-foreground/60">{ b.Owner }</span>
+						<span class="ml-1">·</span>
+					}
+					{ components.CountWord(b.ObjectCount, "object") }
+					<span class="ml-2">· { components.HumanBytes(b.TotalSize) }</span>
+					if b.Versioning != "" {
+						<span class="ml-2">· { b.Versioning }</span>
+					}
 					if b.CreatedAt != "" {
 						<span class="ml-2">· { b.CreatedAt }</span>
 					}
@@ -78,7 +81,7 @@ templ BucketRow(b BucketInfo) {
 				type="button"
 				class="link-action"
 				title="Configure lifecycle rules (auto-transition or expire objects)"
-				@click={ fmt.Sprintf("openLifecycle('%s')", jsEscape(b.Name)) }
+				@click={ fmt.Sprintf("openLifecycle('%s')", components.JsEscape(b.Name)) }
 			>
 				Lifecycle
 			</button>
@@ -86,167 +89,129 @@ templ BucketRow(b BucketInfo) {
 				type="button"
 				class="link-action"
 				title="Enable or suspend S3 object versioning for this bucket"
-				@click={ fmt.Sprintf("toggleVersioning('%s', '%s')", jsEscape(b.Name), jsEscape(b.Versioning)) }
+				@click={ fmt.Sprintf("toggleVersioning('%s', '%s')", components.JsEscape(b.Name), components.JsEscape(b.Versioning)) }
 			>
-				{ versioningButtonLabel(b.Versioning) }
+				{ components.VersioningButtonLabel(b.Versioning) }
 			</button>
 		</div>
 	</div>
 }
 
-templ CreateBucketModal() {
-	<div
-		class="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
-		@click="if ($event.target === $event.currentTarget) showCreate = false"
-	>
-		<div class="card w-full max-w-md mx-4">
-			<div class="card-header flex items-center justify-between">
-				<h3 class="font-bold font-display text-foreground">Create Bucket</h3>
-				<button type="button" class="modal-close" @click="showCreate = false">✕</button>
-			</div>
-			<form
-				@submit.prevent="createBucket()"
-				class="p-4 space-y-4"
-			>
-				<div>
-					<label class="form-label">Bucket Name</label>
-					<input
-						type="text"
-						x-model="createName"
-						required
-						pattern="[a-z0-9][a-z0-9.-]{0,61}[a-z0-9]"
-						placeholder="my-bucket"
-						class="form-input"
-						autocomplete="off"
-					/>
-					<p class="form-hint">S3 naming rules: lowercase, 3–63 chars.</p>
-				</div>
-				<p x-show="createErr" x-cloak class="error-msg" x-text="createErr"></p>
-				<div class="flex justify-end gap-3 pt-2">
-					<button type="button" class="btn-ghost text-sm px-3 py-2" @click="showCreate = false">Cancel</button>
-					<button type="submit" class="btn-primary text-sm px-4 py-2" :disabled="creating">
-						<span x-show="!creating" x-cloak>Create</span>
-						<span x-show="creating" x-cloak class="flex items-center gap-1.5"><span class="spin"></span> Creating…</span>
+templ LifecycleModal() {
+	@components.ModalShell(components.ModalShellOpts{
+		ShowProp:     "showLifecycle",
+		Title:        "Bucket Lifecycle",
+		SubtitleProp: "lifecycleBucket",
+		MaxWidth:     "max-w-2xl",
+		IsTemplate:   true,
+		StickyHeader: true,
+		CardClass:    "max-h-[90vh] overflow-y-auto",
+	}, lifecycleModalBody())
+}
+
+templ lifecycleModalBody() {
+	<div class="p-4 space-y-4">
+		<div x-show="lifecycleLoading" x-cloak class="text-sm text-muted-foreground font-body">Loading…</div>
+		<div x-show="lifecycleErr" x-cloak class="error-msg" x-text="lifecycleErr"></div>
+		<template x-if="!lifecycleLoading && !lifecycleErr">
+			<div class="space-y-3">
+				<template x-for="(rule, i) in lifecycleRules" :key="i">
+					<div class="flex items-end gap-2 p-3 border border-surface-border rounded-lg">
+						<div class="flex-1">
+							<label class="form-label">Prefix</label>
+							<input
+								type="text"
+								x-model="rule.prefix"
+								placeholder="(all objects)"
+								class="form-input"
+								autocomplete="off"
+							/>
+						</div>
+						<div class="w-32">
+							<label class="form-label">Expire (days)</label>
+							<input
+								type="number"
+								x-model.number="rule.expiration_days"
+								min="1"
+								required
+								class="form-input"
+							/>
+						</div>
+						<div class="w-28">
+							<label class="form-label">Status</label>
+							@components.Select("", components.SelectOpts{
+								Model: "rule.status",
+								Options: []components.SelectOption{
+									{Value: "Enabled", Label: "Enabled"},
+									{Value: "Disabled", Label: "Disabled"},
+								},
+							})
+						</div>
+						<button
+							type="button"
+							class="link-danger"
+							@click="lifecycleRules.splice(i, 1)"
+						>
+							Remove
+						</button>
+					</div>
+				</template>
+				<div x-show="lifecycleRules.length === 0" class="py-4 space-y-6 text-center">
+					<div class="border border-surface-border rounded-lg p-4 space-y-2 text-left max-w-md mx-auto">
+						<p class="text-sm text-foreground font-medium font-body">How lifecycle rules work</p>
+						<p class="text-xs text-muted-foreground font-body">Rules automatically expire objects after a set number of days.</p>
+						<div class="space-y-1.5 pt-1">
+							<p class="text-xs text-muted-foreground font-body"><span class="text-foreground font-medium">Prefix</span>: optional, limits the rule to objects with this path (e.g. <code class="text-primary">logs/</code>).</p>
+							<p class="text-xs text-muted-foreground font-body"><span class="text-foreground font-medium">Expire (days)</span>: matching objects are deleted after this many days.</p>
+							<p class="text-xs text-muted-foreground font-body"><span class="text-foreground font-medium">Status</span>: disable a rule without deleting it.</p>
+						</div>
+					</div>
+					<p class="text-sm text-muted-foreground font-body pt-2">No lifecycle rules configured.</p>
+					<button
+						type="button"
+						class="btn-primary text-xs px-3 py-1.5"
+						@click="lifecycleRules.push({ prefix: '', expiration_days: 30, status: 'Enabled' })"
+					>
+						+ Add Rule
 					</button>
 				</div>
-			</form>
+				<button
+					x-show="lifecycleRules.length > 0"
+					x-cloak
+					type="button"
+					class="btn-ghost text-xs px-3 py-1.5 mt-2"
+					@click="lifecycleRules.push({ prefix: '', expiration_days: 30, status: 'Enabled' })"
+				>
+					+ Add Rule
+				</button>
+			</div>
+		</template>
+	</div>
+	<div class="p-4 border-t border-border flex items-center justify-between">
+		<button
+			type="button"
+			class="link-danger px-3 py-2"
+			@click="deleteLifecycle()"
+			:disabled="lifecycleSaving"
+			x-show="lifecycleRules.length > 0"
+			x-cloak
+		>
+			Delete All
+		</button>
+		<div class="flex justify-end gap-3">
+			<button type="button" class="btn-ghost text-sm px-3 py-2" @click="showLifecycle = false">Cancel</button>
+			@components.Button("Save", components.ButtonOpts{Type: "button", Class: "btn-primary text-sm px-4 py-2", OnClick: "saveLifecycle()", LoadingProp: "lifecycleSaving", LoadingLabel: "Saving…", Disabled: "lifecycleSaving", Extra: templ.Attributes{"x-show": "!lifecycleLoading && !lifecycleErr", "x-cloak": ""}})
 		</div>
 	</div>
 }
 
-templ LifecycleModal() {
-	<div
-		class="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
-		@click="if ($event.target === $event.currentTarget) showLifecycle = false"
-	>
-		<div class="card w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
-			<div class="card-header flex items-center justify-between sticky top-0 bg-card z-10">
-				<div>
-					<h3 class="font-bold font-display text-foreground">Bucket Lifecycle</h3>
-					<p class="text-xs text-muted-foreground font-body mt-0.5" x-text="lifecycleBucket"></p>
-				</div>
-				<button type="button" class="modal-close" @click="showLifecycle = false">✕</button>
-			</div>
-			<div class="p-4 space-y-4">
-				<div x-show="lifecycleLoading" x-cloak class="text-sm text-muted-foreground font-body">Loading…</div>
-				<div x-show="lifecycleErr" x-cloak class="error-msg" x-text="lifecycleErr"></div>
-				<template x-if="!lifecycleLoading && !lifecycleErr">
-					<div class="space-y-3">
-						<template x-for="(rule, i) in lifecycleRules" :key="i">
-							<div class="flex items-end gap-2 p-3 border border-surface-border rounded-lg">
-								<div class="flex-1">
-									<label class="form-label">Prefix</label>
-									<input
-										type="text"
-										x-model="rule.prefix"
-										placeholder="(all objects)"
-										class="form-input"
-										autocomplete="off"
-									/>
-								</div>
-								<div class="w-32">
-									<label class="form-label">Expire (days)</label>
-									<input
-										type="number"
-										x-model.number="rule.expiration_days"
-										min="1"
-										required
-										class="form-input"
-									/>
-								</div>
-								<div class="w-28">
-									<label class="form-label">Status</label>
-									<select x-model="rule.status" class="form-select">
-										<option value="Enabled">Enabled</option>
-										<option value="Disabled">Disabled</option>
-									</select>
-								</div>
-								<button
-									type="button"
-									class="link-danger"
-									@click="lifecycleRules.splice(i, 1)"
-								>
-									Remove
-								</button>
-							</div>
-						</template>
-						<div x-show="lifecycleRules.length === 0" class="py-4 space-y-6 text-center">
-							<div class="border border-surface-border rounded-lg p-4 space-y-2 text-left max-w-md mx-auto">
-								<p class="text-sm text-foreground font-medium font-body">How lifecycle rules work</p>
-								<p class="text-xs text-muted-foreground font-body">Rules automatically expire objects after a set number of days.</p>
-								<div class="space-y-1.5 pt-1">
-									<p class="text-xs text-muted-foreground font-body"><span class="text-foreground font-medium">Prefix</span> — optional, limits the rule to objects with this path (e.g. <code class="text-primary">logs/</code>).</p>
-									<p class="text-xs text-muted-foreground font-body"><span class="text-foreground font-medium">Expire (days)</span> — matching objects are deleted after this many days.</p>
-									<p class="text-xs text-muted-foreground font-body"><span class="text-foreground font-medium">Status</span> — disable a rule without deleting it.</p>
-								</div>
-							</div>
-							<p class="text-sm text-muted-foreground font-body pt-2">No lifecycle rules configured.</p>
-							<button
-								type="button"
-								class="btn-primary text-xs px-3 py-1.5"
-								@click="lifecycleRules.push({ prefix: '', expiration_days: 30, status: 'Enabled' })"
-							>
-								+ Add Rule
-							</button>
-						</div>
-						<button
-							x-show="lifecycleRules.length > 0"
-							x-cloak
-							type="button"
-							class="btn-ghost text-xs px-3 py-1.5 mt-2"
-							@click="lifecycleRules.push({ prefix: '', expiration_days: 30, status: 'Enabled' })"
-						>
-							+ Add Rule
-						</button>
-					</div>
-				</template>
-			</div>
-			<div class="p-4 border-t border-border flex items-center justify-between">
-				<button
-					type="button"
-					class="link-danger px-3 py-2"
-					@click="deleteLifecycle()"
-					:disabled="lifecycleSaving"
-					x-show="lifecycleRules.length > 0"
-					x-cloak
-				>
-					Delete All
-				</button>
-				<div class="flex justify-end gap-3">
-					<button type="button" class="btn-ghost text-sm px-3 py-2" @click="showLifecycle = false">Cancel</button>
-					<button
-						type="button"
-						class="btn-primary text-sm px-4 py-2"
-						@click="saveLifecycle()"
-						:disabled="lifecycleSaving"
-						x-show="!lifecycleLoading && !lifecycleErr"
-						x-cloak
-					>
-						<span x-show="!lifecycleSaving" x-cloak>Save</span>
-						<span x-show="lifecycleSaving" x-cloak class="flex items-center gap-1.5"><span class="spin"></span> Saving…</span>
-					</button>
-				</div>
-			</div>
-		</div>
+templ bucketOwnerField(users []string) {
+	<div>
+		<label class="form-label">Owner</label>
+		@components.Select("", components.SelectOpts{
+			Model:   "createOwner",
+			Options: UserSelectOptions(users),
+		})
+		<p class="form-hint">Bucket will be owned by this user. All access keys under the owner share access.</p>
 	</div>
 }
