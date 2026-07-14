@@ -87,14 +87,12 @@ type Broker struct {
 	// startedAt tracks server uptime for dashboard events.
 	startedAt time.Time
 
-	// version is used in dashboard events published on connect and on tick.
-	version string
-
-	// mu guards statsFetcher and initError, which are set after construction
-	// but read concurrently by StartStatusLoop's goroutine.
+	// mu guards statsFetcher, initError, and version, which are set
+	// after construction but read concurrently by StartStatusLoop's goroutine.
 	mu           sync.RWMutex
 	statsFetcher StatsFetcher
 	initError    func() string
+	version      string
 }
 
 // NewBroker creates a Broker backed by a drop-oldest subscriber.
@@ -139,7 +137,7 @@ func (b *Broker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			b.log.Debug("sse client connected", zap.Strings("topics", sub.Topics))
 			// Immediately push current state so the client doesn't wait
 			// up to statusInterval for the first tick.
-			b.publishStatus(b.version)
+			b.publishStatus(b.getVersion())
 			b.publishStats(r.Context())
 		},
 		OnDisconnect: func(sub sseserver.Subscription) {
@@ -206,13 +204,15 @@ func (b *Broker) NotifyBucketChange(action, name string) {
 // StartStatusLoop begins a background goroutine that periodically publishes
 // dashboard status events and upload stats. Stops when ctx is cancelled.
 func (b *Broker) StartStatusLoop(ctx context.Context, version string) {
+	b.mu.Lock()
 	b.version = version
+	b.mu.Unlock()
 	go func() {
 		ticker := time.NewTicker(statusInterval)
 		defer ticker.Stop()
 
 		// publish immediately on start
-		b.publishStatus(b.version)
+		b.publishStatus(b.getVersion())
 		b.publishStats(ctx)
 
 		for {
@@ -220,7 +220,7 @@ func (b *Broker) StartStatusLoop(ctx context.Context, version string) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				b.publishStatus(b.version)
+				b.publishStatus(b.getVersion())
 				b.publishStats(ctx)
 			}
 		}
@@ -231,6 +231,12 @@ func (b *Broker) StartStatusLoop(ctx context.Context, version string) {
 // goroutines to finish.
 func (b *Broker) Shutdown(ctx context.Context) error {
 	return b.server.Shutdown(ctx)
+}
+
+func (b *Broker) getVersion() string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.version
 }
 
 func (b *Broker) publishStatus(version string) {
