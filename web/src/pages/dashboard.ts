@@ -1,6 +1,6 @@
 // Alpine component: dashboard status
 import { S3Status } from './status'
-import { api, apiReady } from '../globals'
+import { api, apiReady, apiAction, reloadAfter } from '../globals'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function dashboardApp(this: any) {
@@ -42,6 +42,20 @@ export function dashboardApp(this: any) {
           if (data.version) this.version = data.version
         } catch (err) {}
       })
+    },
+
+    async generateKey() {
+      this.generating = true
+      try {
+        await apiAction(
+          'Generating key\u2026',
+          () => api()!.post('/_panel/api/keys', { user_name: 'default' }),
+          'Access key generated',
+        )
+        reloadAfter()
+      } catch {
+        this.generating = false
+      }
     },
   }
 }
