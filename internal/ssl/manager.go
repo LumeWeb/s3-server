@@ -99,7 +99,7 @@ func (m *Manager) ProvisionCerts(ctx context.Context, domains []string) error {
 
 // Shutdown cleans up certmagic resources.
 func (m *Manager) Shutdown(ctx context.Context) error {
-	// certmagic doesn't require explicit shutdown — certs are persisted to storage.
+	// certmagic doesn't require explicit shutdown: certs are persisted to storage.
 	// This hook exists for future cleanup if needed.
 	return nil
 }

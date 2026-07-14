@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestManagerNotAvailable(t *testing.T) {
@@ -135,9 +136,9 @@ func TestStatus(t *testing.T) {
 	m := NewWithDir(dir)
 
 	// Write some state
-	_ = m.DisableAutoUpdate()
-	_ = os.WriteFile(filepath.Join(dir, "last-digest"), []byte("sha256:deadbeef"), 0o644)
-	_ = os.WriteFile(filepath.Join(dir, "updater.log"), []byte("log line 1\nlog line 2\n"), 0o644)
+	require.NoError(t, m.DisableAutoUpdate())
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "last-digest"), []byte("sha256:deadbeef"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "updater.log"), []byte("log line 1\nlog line 2\n"), 0o644))
 
 	status := m.Status()
 	if !status.SidecarMode {

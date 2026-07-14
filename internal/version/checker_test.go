@@ -75,13 +75,13 @@ func TestChecker_ConcurrentCheckAndResult_NoRace(t *testing.T) {
 			case <-done:
 				return
 			default:
-				_ = c.Result()
+				c.Result() // exercise read path for race detector
 			}
 		}
 	}()
 
 	// Writer goroutine: continuously update result via check()
-	// check() calls checkOnce which hits the network — we can't easily
+	// check() calls checkOnce which hits the network: we can't easily
 	// mock that, but we can test the mutex directly by simulating
 	// concurrent read/write access to the result field.
 	wg.Add(1)
@@ -122,7 +122,7 @@ func TestChecker_Start_IntervalZeroDefaultsTo24h(t *testing.T) {
 
 	select {
 	case <-done:
-		// ctx cancelled, Start returned — good
+		// ctx cancelled, Start returned: good
 	case <-time.After(2 * time.Second):
 		t.Fatal("Start did not return within 2s with interval=0; likely spin-looping")
 	}

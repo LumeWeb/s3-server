@@ -62,7 +62,7 @@ func TestBucketCreateMiddleware_ObjectPut(t *testing.T) {
 	h, cancel := BucketCreateMiddleware(inner, prov, []string{"s3.example.com"}, testutil.NewTestLogger())
 	defer cancel()
 
-	// PUT with object path — not a bucket creation
+	// PUT with object path: not a bucket creation
 	req := httptest.NewRequest(http.MethodPut, "/mybucket/myobject", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -135,7 +135,7 @@ func TestBucketCreateMiddleware_NoProvisioner(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	// nil provisioner — middleware should pass through
+	// nil provisioner: middleware should pass through
 	h, _ := BucketCreateMiddleware(inner, nil, []string{"s3.example.com"}, testutil.NewTestLogger())
 
 	req := httptest.NewRequest(http.MethodPut, "/mybucket", nil)
@@ -170,7 +170,7 @@ func TestBucketCreateMiddleware_EmptyBucketName(t *testing.T) {
 	h, cancel := BucketCreateMiddleware(inner, prov, []string{"s3.example.com"}, testutil.NewTestLogger())
 	defer cancel()
 
-	// Root path — not a bucket creation
+	// Root path: not a bucket creation
 	req := httptest.NewRequest(http.MethodPut, "/", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -203,7 +203,7 @@ func TestBucketCreateMiddleware_ProvisionError(t *testing.T) {
 func TestBucketCreateMiddleware_DefaultStatusOK(t *testing.T) {
 	prov := &countingProvisioner{}
 
-	// Handler doesn't call WriteHeader — Go defaults to 200
+	// Handler doesn't call WriteHeader: Go defaults to 200
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("ok")) //nolint:errcheck
 	})
@@ -215,7 +215,7 @@ func TestBucketCreateMiddleware_DefaultStatusOK(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
-	// Default status is 0 (not explicitly set) — treated as 200 OK
+	// Default status is 0 (not explicitly set): treated as 200 OK
 	require.Eventually(t, func() bool {
 		return prov.calls.Load() == 1
 	}, time.Second, 10*time.Millisecond)
@@ -338,7 +338,7 @@ func TestBucketCreateMiddleware_ConcurrentShutdown_NoDeadlock(t *testing.T) {
 	cancel()
 	close(done)
 
-	// Should not deadlock — all goroutines finish within timeout
+	// Should not deadlock: all goroutines finish within timeout
 	finished := make(chan struct{})
 	go func() {
 		wg.Wait()

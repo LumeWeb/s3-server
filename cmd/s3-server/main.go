@@ -31,6 +31,7 @@ import (
 	"go.lumeweb.com/s3-server/internal/version"
 	"go.lumeweb.com/s3-server/internal/views"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 const appVersion = "0.1.0"
@@ -88,6 +89,43 @@ func serveCommand() *cli.Command {
 	}
 }
 
+// onboardingStepForState maps a server onboarding state to the corresponding
+// URL step slug. Used by the route handler to redirect users to the correct
+// step based on their server-side progress.
+func onboardingStepForState(state string) string {
+	switch onboarding.OnboardingState(state) {
+	case onboarding.StateAdminSet:
+		return routes.OnboardingStepConnect
+	case onboarding.StateAppKeySet:
+		return routes.OnboardingStepFinish
+	case onboarding.StateComplete:
+		return routes.OnboardingStepFinish
+	default:
+		return routes.OnboardingStepPassword
+	}
+}
+
+// isStepReachable reports whether the requested step is behind or equal to
+// the valid step in the onboarding sequence. This allows users to navigate
+// back to previous steps (e.g. password → back to connect) but not forward
+// to steps they haven't reached.
+func isStepReachable(requested, valid string) bool {
+	order := []string{routes.OnboardingStepPassword, routes.OnboardingStepConnect, routes.OnboardingStepFinish}
+	reqIdx, validIdx := -1, -1
+	for i, s := range order {
+		if s == requested {
+			reqIdx = i
+		}
+		if s == valid {
+			validIdx = i
+		}
+	}
+	if reqIdx == -1 || validIdx == -1 {
+		return false
+	}
+	return reqIdx <= validIdx
+}
+
 func runServe(c *cli.Context) error {
 	dataDir := c.String("data-dir")
 	listenAddr := c.String("listen-addr")
@@ -109,7 +147,7 @@ func runServe(c *cli.Context) error {
 	cfg.S3.Directory = config.ResolveS3Directory(cfg.S3.Directory, dataDir)
 
 	// build logger
-	log, err := config.BuildLogger(cfg.Log)
+	log, logLevel, err := config.BuildLogger(cfg.Log)
 	if err != nil {
 		return fmt.Errorf("failed to create logger: %w", err)
 	}
@@ -118,6 +156,10 @@ func runServe(c *cli.Context) error {
 	// Wire the zap logger into the api package so all Send* functions log
 	// structured error responses automatically.
 	api.SetLogger(log)
+
+	// logLevelUpdater hot-reloads the zap log level when the user changes
+	// it via the settings UI, without requiring a process restart.
+	logLevelUpdater := &zapLogLevelUpdater{atomic: logLevel}
 
 	// init store
 	stor, err := store.New(cfgPath)
@@ -226,7 +268,7 @@ func runServe(c *cli.Context) error {
 	// public routes (no auth required)
 	e.GET(routes.PanelLogin, func(c *echo.Context) error {
 		if stor.OnboardingState() != string(onboarding.StateComplete) {
-			return c.Redirect(http.StatusFound, routes.PanelOnboarding)
+			return c.Redirect(http.StatusFound, routes.PanelOnboarding+"/"+onboardingStepForState(stor.OnboardingState()))
 		}
 		return views.Login(csrfToken(c)).Render(c.Request().Context(), c.Response())
 	})
@@ -269,7 +311,20 @@ func runServe(c *cli.Context) error {
 	})
 
 	// onboarding page (no auth required — admin password not set yet)
+	// Base route redirects to the step matching the server's onboarding state.
 	e.GET(routes.PanelOnboarding, func(c *echo.Context) error {
+		step := onboardingStepForState(stor.OnboardingState())
+		return c.Redirect(http.StatusFound, routes.PanelOnboarding+"/"+step)
+	})
+	// Sub-route: validates the requested step against the server's state machine.
+	// If the user accesses a step they haven't reached, redirect to the correct one.
+	e.GET(routes.PanelOnboarding+"/:step", func(c *echo.Context) error {
+		requestedStep := c.Param("step")
+		serverState := stor.OnboardingState()
+		validStep := onboardingStepForState(serverState)
+		if requestedStep != validStep && !isStepReachable(requestedStep, validStep) {
+			return c.Redirect(http.StatusFound, routes.PanelOnboarding+"/"+validStep)
+		}
 		pubKeyB64 := onboardingSvc.PublicKeyBase64()
 		return views.Onboarding(csrfToken(c), pubKeyB64).Render(c.Request().Context(), c.Response())
 	})
@@ -277,7 +332,7 @@ func runServe(c *cli.Context) error {
 	// root panel redirect — onboarding or dashboard based on state
 	e.GET(routes.PanelRoot, func(c *echo.Context) error {
 		if stor.OnboardingState() != string(onboarding.StateComplete) {
-			return c.Redirect(http.StatusFound, routes.PanelOnboarding)
+			return c.Redirect(http.StatusFound, routes.PanelOnboarding+"/"+onboardingStepForState(stor.OnboardingState()))
 		}
 		return c.Redirect(http.StatusFound, routes.PanelDashboard)
 	})
@@ -299,7 +354,7 @@ func runServe(c *cli.Context) error {
 	panel.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			if stor.OnboardingState() != string(onboarding.StateComplete) {
-				return c.Redirect(http.StatusFound, routes.PanelOnboarding)
+				return c.Redirect(http.StatusFound, routes.PanelOnboarding+"/"+onboardingStepForState(stor.OnboardingState()))
 			}
 			return next(c)
 		}
@@ -311,12 +366,13 @@ func runServe(c *cli.Context) error {
 	adminHdlr := admin.Handler(be, log)
 
 	// wire the stats fetcher on the broker so SSE clients receive upload stats
-	sseBroker.SetStatsFetcher(&sse.AdminStatsFetcher{AdminHandler: adminHdlr})
+	sseBroker.SetStatsFetcher(&sse.AdminStatsFetcher{AdminHandler: adminHdlr, AccountClient: be.AccountClient})
 
 	svc := handlers.NewServices(handlers.ServicesConfig{
 		Store:         stor,
 		KeyStore:      be.KeyStore,
 		Backend:       be.Backend,
+		AccountClient: be.AccountClient,
 		AdminHandler:  adminHdlr,
 		Restarter:     be,
 		BackendStatus: be.Status,
@@ -324,6 +380,7 @@ func runServe(c *cli.Context) error {
 		Version:       appVersion,
 		PlatformName:  config.ResolvePlatformName(cfg.PlatformID),
 		Log:           log,
+		LogLevelUpdater: logLevelUpdater,
 		CSRFToken:     csrfToken,
 		SSEBroker:     sseBroker,
 		UpdateManager: updater.New(),
@@ -344,7 +401,7 @@ func runServe(c *cli.Context) error {
 	// pre-built tailwind CSS (embedded)
 	e.GET("/_panel/assets/tailwind.css", func(c *echo.Context) error {
 		c.Response().Header().Set("Content-Type", "text/css; charset=utf-8")
-		c.Response().Header().Set("Cache-Control", "public, max-age=86400")
+		c.Response().Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		return c.String(http.StatusOK, views.TailwindCSS)
 	})
 
@@ -363,7 +420,7 @@ func runServe(c *cli.Context) error {
 		case strings.HasSuffix(name, ".css"):
 			c.Response().Header().Set("Content-Type", "text/css; charset=utf-8")
 		}
-		c.Response().Header().Set("Cache-Control", "public, max-age=86400")
+		c.Response().Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		return c.String(http.StatusOK, string(data))
 	})
 
@@ -381,10 +438,13 @@ func runServe(c *cli.Context) error {
 		w.Write([]byte(views.FaviconSVG)) //nolint:errcheck
 	})
 
-	// s3d admin/monitoring endpoints (prometheus, upload stats, sqlite backup)
-	mux.Handle("/prometheus", adminHdlr)
-	mux.Handle("/stats/", adminHdlr)
-	mux.Handle("/system/", adminHdlr)
+	// s3d admin/monitoring endpoints — protected with HTTP Basic auth
+	// (admin password). Compatible with s3d's route paths for tools like
+	// Prometheus that expect /prometheus, /stats/, /system/.
+	adminAuthed := auth.BasicAuth(stor, adminHdlr)
+	mux.Handle("/prometheus", adminAuthed)
+	mux.Handle("/stats/", adminAuthed)
+	mux.Handle("/system/", adminAuthed)
 
 	// Wrap S3 handler with per-bucket SSL cert provisioning middleware.
 	// When SSL is managed and host bases are configured, bucket creation
@@ -487,4 +547,17 @@ func runServe(c *cli.Context) error {
 
 	log.Info("shutdown complete")
 	return nil
+}
+
+// zapLogLevelUpdater implements handlers.LogLevelUpdater by wrapping
+// zap.AtomicLevel so the log level can be changed at runtime without
+// restarting the process.
+type zapLogLevelUpdater struct {
+	atomic zap.AtomicLevel
+}
+
+func (u *zapLogLevelUpdater) SetLevel(cfg config.LogConfig) {
+	if parsed, err := zapcore.ParseLevel(cfg.Level); err == nil {
+		u.atomic.SetLevel(parsed)
+	}
 }

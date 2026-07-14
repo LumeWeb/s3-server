@@ -1,6 +1,6 @@
 package routes
 
-// Panel prefix — all panel routes live under this path.
+// Panel prefix: all panel routes live under this path.
 const PanelPrefix = "/_panel"
 
 // Panel route paths.
@@ -19,6 +19,14 @@ const (
 	PanelBuckets    = PanelPrefix + "/buckets"
 	PanelBackups    = PanelPrefix + "/backups"
 	PanelMonitoring = PanelPrefix + "/monitoring"
+)
+
+// Onboarding page sub-routes (state machine steps). No leading slash;
+// appended to PanelOnboarding by callers.
+const (
+	OnboardingStepPassword = "password"
+	OnboardingStepConnect  = "connect"
+	OnboardingStepFinish   = "finish"
 )
 
 // Onboarding API routes.
@@ -40,9 +48,9 @@ const (
 	PanelEvents    = PanelPrefix + "/api/events"
 	PanelS3Config  = PanelPrefix + "/api/s3-config"
 	PanelSSLConfig = PanelPrefix + "/api/ssl-config"
+	PanelLogConfig = PanelPrefix + "/api/log-config"
 
 	PanelAdminStats      = PanelPrefix + "/api/admin/stats"
-	PanelAdminPrometheus = PanelPrefix + "/api/admin/prometheus"
 	PanelAdminBackup     = PanelPrefix + "/api/admin/backup"
 
 	PanelUsersAPI    = PanelPrefix + "/api/users"
@@ -63,7 +71,7 @@ const (
 	PanelPasswordReset  = PanelPrefix + "/api/password/reset"
 	PanelPasswordChange = PanelPrefix + "/api/password/change"
 
-	// Update control routes (sidecar mode only — adaptive based on /state volume).
+	// Update control routes (sidecar mode only: adaptive based on /state volume).
 	PanelUpdateStatus  = PanelPrefix + "/api/update/status"
 	PanelUpdateToggle   = PanelPrefix + "/api/update/toggle"
 	PanelUpdateTrigger  = PanelPrefix + "/api/update/trigger"
