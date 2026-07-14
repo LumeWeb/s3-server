@@ -75,7 +75,6 @@ export function settingsApp(this: any) {
       this.saveConfig('s3Saving', 'S3', '/_panel/api/s3-config', {
         directory: this.s3.directory,
         indexer_url: indexerURL,
-        available_indexers: this.s3.available_indexers,
         host_bases: hostBases,
         disk_usage_limit: this.s3.disk_usage_limit,
         upload_waste_pct: this.s3.upload_waste_pct,

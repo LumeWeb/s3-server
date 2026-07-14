@@ -131,20 +131,20 @@ func TestLoad_PartialYAML(t *testing.T) {
 }
 
 func TestBuildLogger_JSON(t *testing.T) {
-	logger, err := BuildLogger(LogConfig{Level: "info", Format: "json"})
+	logger, _, err := BuildLogger(LogConfig{Level: "info", Format: "json"})
 	require.NoError(t, err)
 	require.NotNil(t, logger)
 }
 
 func TestBuildLogger_Human(t *testing.T) {
-	logger, err := BuildLogger(LogConfig{Level: "debug", Format: "human"})
+	logger, _, err := BuildLogger(LogConfig{Level: "debug", Format: "human"})
 	require.NoError(t, err)
 	require.NotNil(t, logger)
 }
 
 func TestBuildLogger_InvalidLevel(t *testing.T) {
 	// invalid level falls back to info
-	logger, err := BuildLogger(LogConfig{Level: "invalid", Format: "json"})
+	logger, _, err := BuildLogger(LogConfig{Level: "invalid", Format: "json"})
 	require.NoError(t, err)
 	require.NotNil(t, logger)
 }
