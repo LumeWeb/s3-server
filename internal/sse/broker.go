@@ -58,9 +58,16 @@ type StatsEvent struct {
 	UploadedObjects  int64 `json:"uploaded_objects"`
 	UploadedSize     int64 `json:"uploaded_size"`
 	UnpinnedObjects  int64 `json:"unpinned_objects"`
-	FailedUploads   int64 `json:"failed_uploads"`
+	FailedUploads    int64 `json:"failed_uploads"`
 	OrphanedObjects  int64 `json:"orphaned_objects"`
 	MultipartUploads int64 `json:"multipart_uploads"`
+
+	// Account info: zero values when the account client is not available.
+	AccountMaxPinnedData    uint64 `json:"account_max_pinned_data"`
+	AccountRemainingStorage  uint64 `json:"account_remaining_storage"`
+	AccountPinnedData        uint64 `json:"account_pinned_data"`
+	AccountPinnedSize        uint64 `json:"account_pinned_size"`
+	AccountReady             bool   `json:"account_ready"`
 }
 
 // StatsFetcher retrieves upload stats from the s3d admin API.
@@ -80,6 +87,9 @@ type Broker struct {
 	// startedAt tracks server uptime for dashboard events.
 	startedAt time.Time
 
+	// version is used in dashboard events published on connect and on tick.
+	version string
+
 	// mu guards statsFetcher and initError, which are set after construction
 	// but read concurrently by StartStatusLoop's goroutine.
 	mu           sync.RWMutex
@@ -89,7 +99,7 @@ type Broker struct {
 
 // NewBroker creates a Broker backed by a drop-oldest subscriber.
 // backendStatus is called on each status tick; nil defaults to Stopped.
-// statsFetcher may be nil — in that case stats events are not published.
+// statsFetcher may be nil: in that case stats events are not published.
 func NewBroker(s store.Store, backendStatus func() status.Status, keyStore func() backend.S3DStore, log *zap.Logger) *Broker {
 	sub := sseserver.NewDropOldestSubscriber(sseserver.Options{
 		Buffer:            bufferCapacity,
@@ -127,6 +137,10 @@ func (b *Broker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	hooks := sseserver.LifecycleHooks{
 		OnConnect: func(sub sseserver.Subscription) {
 			b.log.Debug("sse client connected", zap.Strings("topics", sub.Topics))
+			// Immediately push current state so the client doesn't wait
+			// up to statusInterval for the first tick.
+			b.publishStatus(b.version)
+			b.publishStats(r.Context())
 		},
 		OnDisconnect: func(sub sseserver.Subscription) {
 			b.log.Debug("sse client disconnected", zap.Strings("topics", sub.Topics))
@@ -192,12 +206,13 @@ func (b *Broker) NotifyBucketChange(action, name string) {
 // StartStatusLoop begins a background goroutine that periodically publishes
 // dashboard status events and upload stats. Stops when ctx is cancelled.
 func (b *Broker) StartStatusLoop(ctx context.Context, version string) {
+	b.version = version
 	go func() {
 		ticker := time.NewTicker(statusInterval)
 		defer ticker.Stop()
 
 		// publish immediately on start
-		b.publishStatus(version)
+		b.publishStatus(b.version)
 		b.publishStats(ctx)
 
 		for {
@@ -205,7 +220,7 @@ func (b *Broker) StartStatusLoop(ctx context.Context, version string) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				b.publishStatus(version)
+				b.publishStatus(b.version)
 				b.publishStats(ctx)
 			}
 		}

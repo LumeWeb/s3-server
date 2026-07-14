@@ -1,54 +1,162 @@
 package views
 
-import "fmt"
+import (
+	"fmt"
+
+	"go.lumeweb.com/s3-server/internal/views/components"
+)
 
 templ Monitoring(stats UploadStats, csrfToken string) {
-	@Base("Monitoring", MonitoringContent(stats, csrfToken))
+	@PageLayout("Monitoring", "monitoring", "", csrfToken, MonitoringContent(stats, csrfToken))
 }
 
 templ MonitoringContent(stats UploadStats, csrfToken string) {
-	<div class="min-h-screen" x-data="monitoringApp" x-init="init()">
-		@Nav("monitoring", "", csrfToken)
-		<div class="max-w-5xl mx-auto px-4 py-6 space-y-6">
-			<div class="flex items-center justify-between">
-				<div>
-					<h2 class="font-bold font-display text-foreground text-lg">Upload Pipeline</h2>
-					<p class="text-xs text-muted-foreground font-body mt-0.5">Real-time object upload statistics</p>
-				</div>
-				<div class="flex items-center gap-3">
-					<div class="flex items-center gap-1.5 text-xs text-muted-foreground font-body" x-show="!error" x-cloak>
-						<div class="h-1.5 w-1.5 rounded-full bg-primary animate-pulse"></div>
-						<span x-text="lastRefresh ? ('Updated ' + lastRefresh) : 'Loading…'"></span>
-					</div>
-					<a
-						href="/_panel/api/admin/prometheus"
-						target="_blank"
-						class="text-sm btn-ghost px-2 py-1"
-					>
-						Prometheus →
-					</a>
-				</div>
+	<div class="max-w-5xl mx-auto px-4 py-6 space-y-6" x-data="monitoringApp" x-init="init()">
+		<div class="flex items-center justify-between">
+			<div>
+				<h2 class="font-bold font-display text-foreground text-lg">Upload Pipeline</h2>
+				<p class="text-xs text-muted-foreground font-body mt-0.5">Real-time object upload statistics</p>
 			</div>
-			<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-				@StatCard("Pending Objects", "pending_objects", fmt.Sprintf("%d", stats.PendingObjects))
-				@StatCard("Pending Size", "pending_size", humanBytes(stats.PendingSize))
-				@StatCard("Uploaded Objects", "uploaded_objects", fmt.Sprintf("%d", stats.UploadedObjects))
-				@StatCard("Uploaded Size", "uploaded_size", humanBytes(stats.UploadedSize))
-				@StatCard("Failed Uploads", "failed_uploads", fmt.Sprintf("%d", stats.FailedUploads))
-				@StatCard("Orphaned Objects", "orphaned_objects", fmt.Sprintf("%d", stats.OrphanedObjects))
-				@StatCard("Multipart Uploads", "multipart_uploads", fmt.Sprintf("%d", stats.MultipartUploads))
-				@StatCard("Unpinned Objects", "unpinned_objects", fmt.Sprintf("%d", stats.UnpinnedObjects))
-			</div>
-			<div class="card p-4" x-show="error" x-cloak>
-				<div class="flex items-center gap-2">
-					<svg class="h-5 w-5 text-destructive" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-						<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"></path>
-					</svg>
-					<span class="text-sm text-destructive font-body" x-text="error"></span>
+			<div class="flex items-center gap-3">
+				<div class="flex items-center gap-1.5 text-xs text-muted-foreground font-body" x-show="!error" x-cloak>
+					<div class="h-1.5 w-1.5 rounded-full bg-primary animate-pulse"></div>
+					<span x-text="lastRefresh ? ('Updated ' + lastRefresh) : 'Connecting…'"></span>
 				</div>
+				<button
+					type="button"
+					class="text-sm btn-ghost px-2 py-1"
+					@click={ "showPromGuide = true" }
+				>
+					Prometheus →
+				</button>
+				</div>
+				</div>
+				@components.ModalShell(components.ModalShellOpts{
+					ShowProp:  "showPromGuide",
+					Title:     "Prometheus Setup",
+					MaxWidth:  "max-w-lg",
+				}, promGuideBody())
+		if stats.AccountMaxPinnedData > 0 {
+			@AccountSection(stats)
+		}
+		<!-- Skeleton grid while loading -->
+		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4" x-show="loading" x-cloak>
+			for i := 0; i < 8; i++ {
+				@components.SkeletonStatCard()
+			}
+		</div>
+		<!-- Real stat cards once SSE data arrives -->
+		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4" x-show="!loading" x-cloak>
+			@StatCard("Pending Objects", "pending_objects", fmt.Sprintf("%d", stats.PendingObjects))
+			@StatCard("Pending Size", "pending_size", components.HumanBytes(stats.PendingSize))
+			@StatCard("Uploaded Objects", "uploaded_objects", fmt.Sprintf("%d", stats.UploadedObjects))
+			@StatCard("Uploaded Size", "uploaded_size", components.HumanBytes(stats.UploadedSize))
+			@StatCard("Failed Uploads", "failed_uploads", fmt.Sprintf("%d", stats.FailedUploads))
+			@StatCard("Orphaned Objects", "orphaned_objects", fmt.Sprintf("%d", stats.OrphanedObjects))
+			@StatCard("Multipart Uploads", "multipart_uploads", fmt.Sprintf("%d", stats.MultipartUploads))
+			@StatCard("Unpinned Objects", "unpinned_objects", fmt.Sprintf("%d", stats.UnpinnedObjects))
+		</div>
+		<div class="card p-4" x-show="error" x-cloak>
+			<div class="flex items-center gap-2">
+				<svg class="h-5 w-5 text-destructive" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+					<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"></path>
+				</svg>
+				<span class="text-sm text-destructive font-body" x-text="error"></span>
 			</div>
-			<div class="card p-4" x-show="!error && !lastRefresh" x-cloak>
-				<p class="text-sm text-muted-foreground font-body">Loading latest stats…</p>
+		</div>
+	</div>
+}
+
+templ promGuideBody() {
+	<div class="p-5 space-y-4">
+		<p class="text-sm text-muted-foreground font-body">
+			Add a scrape job to your <code class="text-xs">prometheus.yml</code>:
+		</p>
+		<pre class="text-xs bg-muted rounded-lg p-3 overflow-x-auto font-mono"><code x-text="promScrapeConfig"></code></pre>
+		<p class="text-xs text-muted-foreground font-body">
+			Use your panel admin password as the Basic Auth password.
+			The username is <code class="text-xs">admin</code>.
+		</p>
+		<div class="flex justify-end">
+			@components.Button("Done", components.ButtonOpts{Type: "button", Class: "btn-primary text-sm px-3 py-1.5", OnClick: "showPromGuide = false"})
+		</div>
+	</div>
+}
+
+templ AccountSection(stats UploadStats) {
+	<div class="card p-4 space-y-3">
+		<div class="flex items-center justify-between">
+			<h3 class="text-sm font-semibold font-display text-foreground">Your Account</h3>
+			<!-- Skeleton badge while loading -->
+			<span
+				class="inline-flex items-center gap-1.5 text-xs font-body px-2 py-0.5 rounded-full bg-muted"
+				x-show="account_ready === null"
+				x-cloak
+			>
+				@components.Skeleton(components.SkeletonOpts{Width: "w-12", Class: "h-3"})
+			</span>
+			<!-- Real badge once data arrives -->
+			<span
+				class="inline-flex items-center gap-1.5 text-xs font-body px-2 py-0.5 rounded-full"
+				:class="account_ready === true ? 'bg-primary/10 text-primary' : 'bg-destructive/10 text-destructive'"
+				x-show="account_ready !== null"
+				x-cloak
+			>
+				<span
+					class="h-1.5 w-1.5 rounded-full"
+					:class="account_ready ? 'bg-primary' : 'bg-destructive'"
+				></span>
+				<span x-text="account_ready ? 'Ready' : 'Not Ready'"></span>
+			</span>
+		</div>
+		<!-- Hint when account not ready -->
+		<p class="text-xs text-muted-foreground font-body" x-show="account_ready === false" x-cloak>
+			Account can take up to 5 minutes to be ready after first setup.
+		</p>
+		<!-- Skeleton storage bar while loading -->
+		<div class="space-y-1.5" x-show="account_ready === null" x-cloak>
+			<div class="flex items-center justify-between text-xs font-body text-muted-foreground">
+				<span>Storage Usage</span>
+				@components.Skeleton(components.SkeletonOpts{Width: "w-24", Class: "h-3"})
+			</div>
+			@components.Skeleton(components.SkeletonOpts{Width: "w-full", Class: "h-2"})
+		</div>
+		<!-- Real data once available -->
+		<div class="space-y-1.5" x-show="account_ready !== null" x-cloak>
+			<div class="flex items-center justify-between text-xs font-body text-muted-foreground">
+				<span>Storage Usage</span>
+				<span>
+					<span x-text="fmtAccountBytes(account_pinned_size)">{ components.HumanBytes(int64(stats.AccountPinnedSize)) }</span>
+					{ " / " }
+					<span x-text="fmtAccountBytes(account_max_pinned_data)">{ components.HumanBytes(int64(stats.AccountMaxPinnedData)) }</span>
+				</span>
+			</div>
+			<div class="h-2 w-full rounded-full bg-muted overflow-hidden">
+				<div
+					class="h-full rounded-full transition-all duration-500"
+					:class="accountPct() > 90 ? 'bg-destructive' : (accountPct() > 75 ? 'bg-yellow-500' : 'bg-primary')"
+					:style={ `width: ${Math.min(accountPct(), 100)}%` }
+				></div>
+			</div>
+			<div class="text-xs text-muted-foreground font-body">
+				<span x-text="fmtAccountBytes(account_remaining_storage)">{ components.HumanBytes(int64(stats.AccountRemainingStorage)) }</span>
+				{ " remaining" }
+			</div>
+		</div>
+		<div
+			class="flex items-start gap-2 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20"
+			x-show="account_ready === true && account_remaining_storage > 0 && pending_size_bytes > account_remaining_storage"
+			x-cloak
+		>
+			<svg class="h-5 w-5 text-yellow-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+				<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.75 9.75h19.5a2.25 2.25 0 002.25-2.25v-5.379a2.25 2.25 0 00-.659-1.591l-7.5-7.5a2.25 2.25 0 00-3.182 0l-7.5 7.5a2.25 2.25 0 00-.659 1.591v5.379A2.25 2.25 0 003.75 21.75z"></path>
+			</svg>
+			<div class="text-xs font-body text-foreground">
+				<strong>Insufficient storage</strong>: pending uploads
+				(<span x-text="fmtAccountBytes(pending_size_bytes)" class="font-medium">{ components.HumanBytes(stats.PendingSize) }</span>)
+				exceed remaining storage
+				(<span x-text="fmtAccountBytes(account_remaining_storage)" class="font-medium">{ components.HumanBytes(int64(stats.AccountRemainingStorage)) }</span>).
+				Uploads will remain pending until storage is increased.
 			</div>
 		</div>
 	</div>
