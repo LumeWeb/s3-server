@@ -163,7 +163,7 @@ func TestBroker_SSEWireFormat(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Shutdown the broker to ensure all subscriber goroutines finish
-	// before we read the body — avoids race on httptest.ResponseRecorder.
+	// before we read the body: avoids race on httptest.ResponseRecorder.
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
 	require.NoError(t, b.Shutdown(shutdownCtx))
@@ -222,7 +222,7 @@ func TestBroker_MultipleClients(t *testing.T) {
 func TestBroker_DropOldestBuffer(t *testing.T) {
 	b, _ := newTestBroker(t)
 
-	// publish many events without any subscriber — should not block or panic
+	// publish many events without any subscriber: should not block or panic
 	for i := 0; i < 100; i++ {
 		b.PublishDashboard(DashboardEvent{KeyCount: i}) //nolint:errcheck
 	}
@@ -305,10 +305,9 @@ func TestFetchStats_ContextCancellation(t *testing.T) {
 	defer cancel()
 
 	start := time.Now()
-	_, err := fetcher.FetchStats(ctx)
+	fetcher.FetchStats(ctx)
 	elapsed := time.Since(start)
 
 	// Should return promptly after context cancellation, not hang
 	assert.Less(t, elapsed, 2*time.Second, "FetchStats must not hang after context cancellation")
-	_ = err // error is expected (handler returned 503 or context cancelled)
 }
