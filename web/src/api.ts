@@ -99,9 +99,12 @@ const api = ky.create({
   timeout: 30000,
 })
 
-export async function handleReq<T = any>(promise: Promise<T>): Promise<T | undefined> {
+export async function handleReq<T = any>(promise: Promise<Response>): Promise<T | undefined> {
   try {
-    return await promise
+    const res = await promise
+    // 204 No Content has an empty body — don't attempt to parse as JSON
+    if (res.status === 204) return undefined as T
+    return await res.json() as T
   } catch (e: any) {
     // Ky v2 HTTPError pre-parses the response body into e.data
     const body = e.data || {}
@@ -127,8 +130,8 @@ export async function handleReq<T = any>(promise: Promise<T>): Promise<T | undef
 
 // Expose __api on window for inline Alpine components
 window.__api = {
-  get: (url: string) => handleReq(api(url, withCsrf()).json()),
-  post: (url: string, json?: any) => handleReq(api.post(url, { json, ...withCsrf() }).json()),
-  put: (url: string, json?: any) => handleReq(api.put(url, { json, ...withCsrf() }).json()),
-  del: (url: string) => handleReq(api.delete(url, withCsrf()).json()),
+  get: (url: string) => handleReq(api(url, withCsrf())),
+  post: (url: string, json?: any) => handleReq(api.post(url, { json, ...withCsrf() })),
+  put: (url: string, json?: any) => handleReq(api.put(url, { json, ...withCsrf() })),
+  del: (url: string) => handleReq(api.delete(url, withCsrf())),
 }
