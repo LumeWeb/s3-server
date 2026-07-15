@@ -26,7 +26,7 @@ export function backupsApp(this: any) {
       try {
         await api()!.delete(`/_panel/api/backups/${filename}`)
         toast('Backup deleted', 'success')
-        reloadAfter(1500)
+        reloadAfter()
       } catch (e: any) {
         toast(e.message, 'error')
       } finally {
