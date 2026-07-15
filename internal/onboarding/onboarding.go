@@ -539,14 +539,14 @@ func ResolveIndexerURL(rawURL string) string {
 	httpsURL := "https://" + rawURL
 	resp, err := client.Head(httpsURL)
 	if err == nil {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		return httpsURL
 	}
 
 	httpURL := "http://" + rawURL
 	resp, err = client.Head(httpURL)
 	if err == nil {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		return httpURL
 	}
 

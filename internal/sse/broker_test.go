@@ -305,7 +305,7 @@ func TestFetchStats_ContextCancellation(t *testing.T) {
 	defer cancel()
 
 	start := time.Now()
-	fetcher.FetchStats(ctx)
+	_, _ = fetcher.FetchStats(ctx)
 	elapsed := time.Since(start)
 
 	// Should return promptly after context cancellation, not hang

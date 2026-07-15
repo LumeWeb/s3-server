@@ -131,7 +131,7 @@ func (a *backendAdapter) ListAllBuckets(ctx context.Context) ([]BucketInfo, erro
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var buckets []BucketInfo
 	for rows.Next() {
 		var bi BucketInfo
