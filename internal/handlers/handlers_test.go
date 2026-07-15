@@ -370,10 +370,13 @@ func TestServices_SetS3Config(t *testing.T) {
 		HostBases:         []string{"s3.example.com"},
 	})
 	mockStore.EXPECT().SetS3Config(config.S3Config{
-		Directory:         "/new/data",
-		IndexerURL:        "https://custom.storage",
-		AvailableIndexers: []config.IndexerOption{},
-		HostBases:         []string{"s3.example.com"},
+		Directory:  "/new/data",
+		IndexerURL: "https://custom.storage",
+		AvailableIndexers: []config.IndexerOption{
+			{URL: "https://sia.pinner.xyz", Name: "Pinner"},
+			{URL: "https://sia.storage", Name: "Sia Storage"},
+		},
+		HostBases: []string{"s3.example.com"},
 	}).Return(nil)
 
 	e := echo.New()

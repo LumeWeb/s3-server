@@ -132,8 +132,8 @@ func stickyHeaderClass(sticky bool) string {
 //	</div>
 templ Dialog(showProp string, title string, message string, confirmText string, confirmClass string) {
 	@ModalShell(ModalShellOpts{
-		ShowProp:   showProp,
-		Title:      title,
+		ShowProp: showProp,
+		Title:    title,
 		ExtraAttrs: templ.Attributes{
 			"x-transition": "",
 		},
@@ -220,15 +220,15 @@ templ createDialogBody(showProp string, label string, placeholder string, hint s
 // Uses ModalOverlay directly (custom card layout with icon column, no card-header).
 templ ConfirmDialog() {
 	@ModalOverlay(ModalOverlayOpts{
-		ShowProp:   "show",
-		ZIndex:     "z-[80]",
+		ShowProp: "show",
+		ZIndex:   "z-[80]",
 		ExtraAttrs: templ.Attributes{
-			"id":           "confirm-dialog",
-			"x-data":       "{ show: false, title: 'Confirm', message: '', detail: '', variant: 'warning', resolve: null }",
-			"x-transition": "",
-			"@click":       "if ($event.target === $event.currentTarget) { if (resolve) { resolve(false) }; show = false }",
+			"id":                     "confirm-dialog",
+			"x-data":                 "{ show: false, title: 'Confirm', message: '', detail: '', variant: 'warning', resolve: null }",
+			"x-transition":           "",
+			"@click":                 "if ($event.target === $event.currentTarget) { if (resolve) { resolve(false) }; show = false }",
 			"@keydown.escape.window": "if (show && resolve) { resolve(false); show = false }",
-			"aria-labelledby": "confirm-dialog-title",
+			"aria-labelledby":        "confirm-dialog-title",
 		},
 	}, confirmDialogBody())
 }
@@ -277,13 +277,13 @@ templ confirmDialogBody() {
 // Uses ModalOverlay directly (custom card layout with icon, no card-header).
 templ ErrorDialog() {
 	@ModalOverlay(ModalOverlayOpts{
-		ShowProp:   "show",
-		ZIndex:     "z-[80]",
+		ShowProp: "show",
+		ZIndex:   "z-[80]",
 		ExtraAttrs: templ.Attributes{
-			"id":           "error-dialog",
-			"x-data":       "{ show: false, title: '', message: '', detail: '' }",
-			"x-transition": "",
-			"@click":       "if ($event.target === $event.currentTarget) { show = false }",
+			"id":              "error-dialog",
+			"x-data":          "{ show: false, title: '', message: '', detail: '' }",
+			"x-transition":    "",
+			"@click":          "if ($event.target === $event.currentTarget) { show = false }",
 			"aria-labelledby": "error-dialog-title",
 		},
 	}, errorDialogBody())
