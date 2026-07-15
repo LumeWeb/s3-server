@@ -235,9 +235,15 @@ export function onboardingWizard(this: any) {
         const targetStep = STEP_MAP[targetState]
         const currentStepNum = STEP_MAP[currentState]
         if (targetStep < currentStepNum) {
-          // Going backward: send Back events
+          // Going backward: send Back events, but only if the FSM
+          // supports them — otherwise keep the URL in sync with the
+          // real state.
+          const before = this._service.machine.current
           for (let i = currentStepNum; i > targetStep; i--) {
             this._service.send(Event.Back)
+          }
+          if (this._service.machine.current === before) {
+            replaceUrl(STATE_SLUGS[before] || 'password')
           }
         }
       })
