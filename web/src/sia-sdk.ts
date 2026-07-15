@@ -1,4 +1,4 @@
-// Sodium + Sia SDK initialization — only loaded on the onboarding page.
+// Sodium + Sia SDK initialization: only loaded on the onboarding page.
 import _sodium from 'libsodium-wrappers'
 import { initSia, Builder, generateRecoveryPhrase, validateRecoveryPhrase, AppKey } from '@siafoundation/sia-storage'
 

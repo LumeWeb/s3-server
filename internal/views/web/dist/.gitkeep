@@ -1,3 +1,0 @@
-# Frontend build output directory.
-# Run `bun run build` in the web/ directory to populate this directory
-# with panel.js, panel.css, fonts, and WASM before building the Go binary.
