@@ -15,11 +15,11 @@ templ OnboardingContent(csrfToken string, publicKey string) {
 				<template x-for="(step, i) in steps" :key="i">
 					<div class="flex items-center">
 						<div
-							class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold font-display border-2 shrink-0"
+							class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold font-display border-2 shrink-0 transition-colors duration-150"
 							:class="i <= currentStep ? 'bg-primary text-primary-foreground border-primary' : 'bg-secondary text-muted-foreground border-border'"
 							x-text="i + 1"
 						></div>
-						<div x-show="i < steps.length - 1" x-cloak class="w-10 h-0.5 shrink-0 rounded-full" :class="i < currentStep ? 'bg-primary' : 'bg-border'"></div>
+						<div x-show="i < steps.length - 1" x-cloak class="w-10 h-0.5 shrink-0 rounded-full transition-colors duration-150" :class="i < currentStep ? 'bg-primary' : 'bg-border'"></div>
 					</div>
 				</template>
 			</div>
@@ -43,7 +43,7 @@ templ OnboardingContent(csrfToken string, publicKey string) {
 				<!-- 1a: Connect form -->
 				<div x-show="siaStep === 'connect'">
 					<h2 class="step-heading">Connect to Sia Network</h2>
-					<p class="step-desc">Connect your Sia account to this server. You'll be redirected to a managed Sia portal to approve the connection, then given a 12-word Recovery Key. Write it down; it's the only way to recover your account if you lose access. No one, including us, can regenerate it for you.</p>
+					<p class="step-desc">Pinner uses decentralized storage powered by Sia. Connect your Sia account so your data stays private and under your control.</p>
 					<div class="space-y-3 mb-4">
 						<p class="text-sm font-medium font-body text-muted-foreground">Indexer</p>
 						<template x-for="(indexer, i) in (siaConfig?.available_indexers || [])" :key="i">
@@ -52,8 +52,8 @@ templ OnboardingContent(csrfToken string, publicKey string) {
 								class="w-full flex items-center gap-3 p-4 rounded-xl border-2 border-border transition-all duration-200 text-left"
 								:style="indexerSelection === indexer.url
 									? (indexer.brand_color
-										? `background-color: ${indexer.brand_color}; border-color: ${indexer.brand_color}; transform: scale(1.03)`
-										: 'transform: scale(1.03)')
+										? `background-color: ${indexer.brand_color}; border-color: ${indexer.brand_color}`
+										: '')
 									: (indexer.brand_color
 										? `background-color: ${indexer.brand_color}`
 										: '')"
@@ -122,7 +122,6 @@ templ OnboardingContent(csrfToken string, publicKey string) {
 							type="button"
 							class="w-full flex items-center gap-3 p-4 rounded-xl border-2 border-border transition-all duration-200 text-left"
 							:class="indexerSelection === '__custom__' ? 'bg-card' : 'bg-transparent hover:bg-secondary/50'"
-							:style="indexerSelection === '__custom__' ? 'transform: scale(1.03)' : ''"
 							@click={ `indexerSelection = '__custom__'; $nextTick(() => $refs.customIndexer?.focus())` }
 							:aria-pressed="indexerSelection === '__custom__'"
 						>
@@ -134,6 +133,7 @@ templ OnboardingContent(csrfToken string, publicKey string) {
 							</div>
 							<span class="flex-1">
 								<span class="block text-sm font-medium font-body text-foreground">Custom</span>
+								<span class="block text-xs mt-0.5 text-muted-foreground">Use a custom indexer URL</span>
 							</span>
 						</button>
 						<div x-show="indexerSelection === '__custom__'" x-collapse>
@@ -142,7 +142,8 @@ templ OnboardingContent(csrfToken string, publicKey string) {
 							}
 						</div>
 					</div>
-					@components.LoadingButton("Connect to Sia", components.LoadingButtonOpts{
+					<p class="meta-text mt-4 mb-2">Clicking "Continue" will open a new tab. Log in or approve the connection there, then come back here.</p>
+					@components.LoadingButton("Continue", components.LoadingButtonOpts{
 						OnClick:      "connectToSia()",
 						LoadingProp:  "loading",
 						LoadingLabel: "Connecting...",
@@ -163,7 +164,13 @@ templ OnboardingContent(csrfToken string, publicKey string) {
 				<!-- 1c: Recovery Key -->
 				<div x-show="siaStep === 'recovery'">
 					<h2 class="step-heading">Back up your Recovery Key</h2>
-					<p class="step-desc">This Recovery Key is the only way to recover access to your account if this server is lost or reinstalled. Write it down and store it somewhere safe; we cannot recover it for you.</p>
+					<p class="step-desc">We've generated a 12-word Recovery Key for your account. Save it now; you'll need it if this server is ever lost or reinstalled.</p>
+					<div class="flex items-start gap-3 p-3 rounded-lg border border-destructive/30 bg-destructive/5 mb-4">
+						<svg class="w-5 h-5 text-destructive shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+							<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"></path>
+						</svg>
+						<p class="text-sm text-destructive font-body">This is the only way to recover access to your account. No one, including us, can regenerate it. Store it somewhere safe.</p>
+					</div>
 					<!-- Accordion: Use Generated / Use My Own -->
 					<div class="space-y-2 mb-4">
 						<!-- Option 1: Use Generated (default) -->
@@ -264,7 +271,7 @@ templ OnboardingContent(csrfToken string, publicKey string) {
 				<template x-if="generatedCredentials.accessKey">
 					<div class="space-y-4">
 						<h2 class="step-heading text-primary!">Setup Complete!</h2>
-						<p class="step-desc">Save these credentials; you'll need them to access your S3 storage.</p>
+						<p class="step-desc">Save these credentials securely; treat them like passwords. You'll need them to access your S3 storage programmatically, and they won't be shown again.</p>
 						<div class="border border-border rounded-lg overflow-hidden">
 							<div class="card-header flex items-center justify-between">
 								<h3 class="section-title">Admin Credentials</h3>
@@ -305,8 +312,17 @@ templ OnboardingContent(csrfToken string, publicKey string) {
 					</div>
 				</template>
 			</div>
-			<!-- Reset onboarding: start over -->
-			<div class="mt-6 text-center" x-show="currentStep > 0" x-cloak>
+			<!-- Step navigation: back + start over -->
+			<div class="mt-6 flex items-center justify-center gap-3" x-show="currentStep > 0" x-cloak>
+				<button
+					type="button"
+					class={ components.Cls("btn-secondary", "btn-size-default") }
+					@click="goBack()"
+					x-show="!loading"
+				>
+					<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"></path><path d="M12 19l-7-7 7-7"></path></svg>
+					Back
+				</button>
 				<button
 					type="button"
 					class={ components.Cls("btn-danger", "btn-size-default", "gap-1.5") }

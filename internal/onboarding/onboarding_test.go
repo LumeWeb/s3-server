@@ -26,6 +26,13 @@ import (
 	"golang.org/x/crypto/nacl/box"
 )
 
+// Test fixture seed values (not real secrets).
+const (
+	testSeedA = "01234567890123456789012345678901"
+	testSeedB = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	testSeedC = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+)
+
 // testS3DStore is an in-memory implementation of backend.S3DStore for tests.
 type testS3DStore struct {
 	mu     sync.Mutex
@@ -228,7 +235,7 @@ func TestSetAppKeyHandler_Success(t *testing.T) {
 	mockStore.EXPECT().SetOnboardingState("app_key_set").Return(nil)
 
 	var appKey [32]byte
-	copy(appKey[:], []byte("01234567890123456789012345678901"))
+	copy(appKey[:], []byte(testSeedA))
 	encrypted := encryptForService(svc, appKey[:])
 
 	e := echo.New()
@@ -250,17 +257,107 @@ func TestSetAppKeyHandler_Success(t *testing.T) {
 }
 
 func TestSetAppKeyHandler_FromAppKeySet(t *testing.T) {
-	svc, _, _, _ := newTestService(t, StateAppKeySet)
+	// Re-submitting the app key from StateAppKeySet should succeed
+	// (idempotent: user went back and reconnected).
+	svc, mockStore, _, _ := newTestService(t, StateAppKeySet)
+
+	mockStore.EXPECT().S3Config().Return(config.S3Config{Directory: "/tmp/test-s3d"})
+	mockStore.EXPECT().SetOnboardingState("app_key_set").Return(nil)
+
+	var appKey [32]byte
+	copy(appKey[:], []byte(testSeedA))
+	encrypted := encryptForService(svc, appKey[:])
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodPost, "/api/onboarding/app-key", strings.NewReader(`{}`))
+	body := `{"encrypted_app_key":"` + encrypted + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/onboarding/app-key", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
 
 	err := svc.SetAppKeyHandler(c)
 	require.NoError(t, err)
-	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, StateAppKeySet, svc.fsm.State())
+}
+
+func TestSetAppKeyHandler_FromAppKeySet_OverwritesKey(t *testing.T) {
+	// Re-submitting from StateAppKeySet should overwrite the previous app key
+	// in the SQLite store. Verify the mock receives the new key.
+	svc, mockStore, testStore, _ := newTestService(t, StateAppKeySet)
+
+	// Seed the store with an initial key to simulate the first submission.
+	var initialKey [32]byte
+	copy(initialKey[:], []byte(testSeedB))
+	expandedInitial := types.NewPrivateKeyFromSeed(initialKey[:])
+	require.NoError(t, testStore.SetAppKey(expandedInitial, ""))
+
+	mockStore.EXPECT().S3Config().Return(config.S3Config{Directory: "/tmp/test-s3d"})
+	mockStore.EXPECT().SetOnboardingState("app_key_set").Return(nil)
+
+	// Submit a different key.
+	var newKey [32]byte
+	copy(newKey[:], []byte(testSeedC))
+	encrypted := encryptForService(svc, newKey[:])
+
+	e := echo.New()
+	body := `{"encrypted_app_key":"` + encrypted + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/onboarding/app-key", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := svc.SetAppKeyHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	// The store should now hold the new key, not the old one.
+	assert.NotEqual(t, expandedInitial, testStore.appKey, "app key should be overwritten with new key")
+	assert.Equal(t, StateAppKeySet, svc.fsm.State())
+}
+
+func TestSetAppKeyHandler_FromAppKeySet_WithCustomIndexer(t *testing.T) {
+	// Re-submitting from StateAppKeySet with a custom indexer URL should
+	// resolve and persist the new indexer URL alongside the app key.
+	svc, mockStore, _, _ := newTestService(t, StateAppKeySet)
+
+	mockStore.EXPECT().S3Config().Return(config.S3Config{Directory: "/tmp/test-s3d"}).Times(2)
+	mockStore.EXPECT().SetS3Config(config.S3Config{
+		Directory:  "/tmp/test-s3d",
+		IndexerURL: "https://example.com",
+	}).Return(nil)
+	mockStore.EXPECT().SetOnboardingState("app_key_set").Return(nil)
+
+	var appKey [32]byte
+	copy(appKey[:], []byte(testSeedA))
+	encrypted := encryptForService(svc, appKey[:])
+
+	e := echo.New()
+	body := `{"encrypted_app_key":"` + encrypted + `","indexer_url":"https://example.com"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/onboarding/app-key", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := svc.SetAppKeyHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, StateAppKeySet, svc.fsm.State())
+}
+
+func TestSetAppKeyHandler_FromComplete_Rejected(t *testing.T) {
+	// Re-submitting from StateComplete should still be rejected.
+	svc, _, _, _ := newTestService(t, StateComplete)
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/api/onboarding/app-key", strings.NewReader(`{"encrypted_app_key":"dGVzdA=="}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := svc.SetAppKeyHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusConflict, rec.Code)
 }
 
 func TestSetAppKeyHandler_FromPending(t *testing.T) {
@@ -466,7 +563,7 @@ func TestOnboardingFlow_AdminThenKeys(t *testing.T) {
 	svc, mockStore, _, init := newTestService(t, StatePending)
 
 	var appKey [32]byte
-	copy(appKey[:], []byte("01234567890123456789012345678901"))
+	copy(appKey[:], []byte(testSeedA))
 	encrypted := encryptForService(svc, appKey[:])
 	e := echo.New()
 
@@ -525,7 +622,7 @@ func TestSetAppKeyHandler_PersistFailure_ReturnsError(t *testing.T) {
 	mockStore.EXPECT().SetOnboardingState("app_key_set").Return(errors.New("disk full"))
 
 	var appKey [32]byte
-	copy(appKey[:], []byte("01234567890123456789012345678901"))
+	copy(appKey[:], []byte(testSeedA))
 	encrypted := encryptForService(svc, appKey[:])
 
 	e := echo.New()
@@ -539,6 +636,33 @@ func TestSetAppKeyHandler_PersistFailure_ReturnsError(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
 	assert.Equal(t, StateAdminSet, svc.fsm.State(), "FSM must roll back to StateAdminSet on persist failure")
+	assert.Nil(t, svc.sqliteStore, "sqliteStore must be closed on persist failure")
+}
+
+// Regression: persist failure from StateAppKeySet rolls back to StateAppKeySet,
+// not StateAdminSet. The entry state is captured before the FSM transition
+// so rollback restores the correct original state.
+func TestSetAppKeyHandler_PersistFailure_FromAppKeySet_RollsBackToAppKeySet(t *testing.T) {
+	svc, mockStore, _, _ := newTestService(t, StateAppKeySet)
+
+	mockStore.EXPECT().S3Config().Return(config.S3Config{Directory: "/tmp/test-s3d"})
+	mockStore.EXPECT().SetOnboardingState("app_key_set").Return(errors.New("disk full"))
+
+	var appKey [32]byte
+	copy(appKey[:], []byte(testSeedA))
+	encrypted := encryptForService(svc, appKey[:])
+
+	e := echo.New()
+	body := `{"encrypted_app_key":"` + encrypted + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/onboarding/app-key", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := svc.SetAppKeyHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+	assert.Equal(t, StateAppKeySet, svc.fsm.State(), "FSM must roll back to StateAppKeySet, not StateAdminSet, on persist failure from StateAppKeySet")
 	assert.Nil(t, svc.sqliteStore, "sqliteStore must be closed on persist failure")
 }
 
