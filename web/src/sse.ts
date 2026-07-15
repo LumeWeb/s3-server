@@ -1,3 +1,5 @@
+import { RELOAD_DELAY } from './globals'
+
 // --- Toast ---
 
 let toastTimer: ReturnType<typeof setTimeout> | null = null
@@ -44,7 +46,7 @@ export function initToast(Alpine: any) {
   // DRY helper: reload after a short delay (lets success toasts finish).
   // Usage in templ: window.__reloadAfter()
   window.__reloadAfter = function (ms?: number) {
-    setTimeout(() => window.location.reload(), ms ?? 800)
+    setTimeout(() => window.location.reload(), ms ?? RELOAD_DELAY)
   }
 
   // DRY helper: copy text to clipboard with HTTP fallback for non-secure contexts.

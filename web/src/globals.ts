@@ -85,8 +85,11 @@ export function siaReady(): Promise<void> {
   return window.__siaReady ?? Promise.resolve()
 }
 
+/** Default delay (ms) before page reload after a successful action — enough to see the success toast without confusing the user. */
+export const RELOAD_DELAY = 400
+
 /** Reloads the page after a short delay (lets success toasts finish). */
-export function reloadAfter(ms = 800): void {
+export function reloadAfter(ms = RELOAD_DELAY): void {
   setTimeout(() => window.location.reload(), ms)
 }
 

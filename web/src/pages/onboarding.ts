@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { createMachine, interpret, state, transition, reduce } from 'robot3'
-import { api, apiReady, toast, siaReady, siaSdk, copyToClipboard as copyText } from '../globals'
+import { api, apiReady, toast, siaReady, siaSdk, copyToClipboard as copyText, reloadAfter } from '../globals'
 
 // --- FSM definition ---------------------------------------------------------
 
@@ -542,8 +542,7 @@ export function onboardingWizard(this: any) {
       this.loading = true
       try {
         await api()!.post('/_panel/api/onboarding/reset', {})
-        // Reload the page to get a fresh Alpine state + FSM
-        window.location.reload()
+        reloadAfter()
       } catch (e: any) {
         this.loading = false
         toast(e.message, 'error')
