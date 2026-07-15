@@ -71,8 +71,30 @@ describe('withCsrf', () => {
 
 describe('handleReq', () => {
   it('returns resolved value on success', async () => {
-    const result = await handleReq(Promise.resolve({ data: 'ok' }))
+    const mockRes = { status: 200, json: () => Promise.resolve({ data: 'ok' }) }
+    const result = await handleReq(Promise.resolve(mockRes as any))
     expect(result).toEqual({ data: 'ok' })
+  })
+
+  it('returns undefined for 204 No Content without parsing JSON', async () => {
+    const jsonSpy = vi.fn(() => Promise.resolve({}))
+    const mockRes = { status: 204, json: jsonSpy }
+    const result = await handleReq(Promise.resolve(mockRes as any))
+    expect(result).toBeUndefined()
+    expect(jsonSpy).not.toHaveBeenCalled()
+  })
+
+  it('returns undefined for 204 even when response has empty body', async () => {
+    // Regression: flush with no active buckets returns 204 No Content.
+    // Previously, calling .json() on the empty body threw
+    // "Unexpected end of JSON input".
+    const jsonSpy = vi.fn(() => {
+      throw new SyntaxError('Unexpected end of JSON input')
+    })
+    const mockRes = { status: 204, json: jsonSpy }
+    const result = await handleReq(Promise.resolve(mockRes as any))
+    expect(result).toBeUndefined()
+    expect(jsonSpy).not.toHaveBeenCalled()
   })
 
   it('returns undefined on generic error (without ky HTTPError shape)', async () => {
