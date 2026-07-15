@@ -109,10 +109,10 @@ templ SettingsContent(csrfToken string, s3Cfg config.S3Config, sslCfg config.SSL
 				>
 					<div>
 						<div class="text-sm text-foreground font-body">Flush all buckets</div>
-						<div class="text-xs text-muted-foreground font-body">Upload all pending objects immediately.</div>
+						<div class="meta-text">Upload all pending objects immediately.</div>
 					</div>
-					@components.Button("Flush All", components.ButtonOpts{Type: "button", Class: "btn-sm", OnClick: "showFlush = true", LoadingProp: "flushing", LoadingLabel: "Flushing…", Disabled: "flushing"})
-					@components.Dialog("showFlush", "Flush all buckets", "Uploads all pending objects to the storage network immediately.", "Flush All", "btn-sm")
+					@components.Button("Flush All", components.ButtonOpts{Type: "button", Class: components.Cls("btn-primary", "btn-size-default"), OnClick: "showFlush = true", LoadingProp: "flushing", LoadingLabel: "Flushing…", Disabled: "flushing"})
+					@components.Dialog("showFlush", "Flush all buckets", "Upload all pending objects to the storage network immediately.", "Flush All", components.Cls("btn-primary", "btn-size-default"))
 				</div>
 			</form>
 		}
@@ -193,7 +193,7 @@ templ SettingsContent(csrfToken string, s3Cfg config.S3Config, sslCfg config.SSL
 						<div class="flex items-center justify-between">
 							<div>
 								<div class="text-sm text-foreground font-body">Auto-update</div>
-								<div class="text-xs text-muted-foreground font-body">Automatically download and apply new versions when available.</div>
+								<div class="meta-text">Automatically download and apply new versions when available.</div>
 							</div>
 							<label class="relative inline-flex items-center cursor-pointer">
 								<input
@@ -211,7 +211,7 @@ templ SettingsContent(csrfToken string, s3Cfg config.S3Config, sslCfg config.SSL
 						<div class="border-t border-border pt-4 flex items-center justify-between">
 							<div>
 								<div class="text-sm text-foreground font-body">Manual update</div>
-								<div class="text-xs text-muted-foreground font-body">
+								<div class="meta-text">
 									Triggers an immediate update check on the next sidecar poll cycle.
 									<template x-if="lastDigest">
 										<span>Current digest: <code class="text-xs text-muted-foreground" x-text="lastDigest.substring(0, 19) + '…'"></code></span>
@@ -220,7 +220,7 @@ templ SettingsContent(csrfToken string, s3Cfg config.S3Config, sslCfg config.SSL
 							</div>
 							<button
 								type="button"
-								class="btn-sm"
+								class="btn-primary btn-size-default"
 								:disabled="triggerLoading"
 								@click="triggerUpdate()"
 								x-text="triggerLoading ? 'Triggering…' : 'Update & Restart'"
@@ -244,13 +244,13 @@ templ SettingsContent(csrfToken string, s3Cfg config.S3Config, sslCfg config.SSL
 						<div class="flex items-center justify-between">
 							<div>
 								<div class="text-sm text-foreground font-body">Software version</div>
-								<div class="text-xs text-muted-foreground font-body">Panel <code x-text="versionResult?.current_version || '...'"></code> · s3d <code>{ s3dVersion }</code></div>
+								<div class="meta-text">Panel <code x-text="versionResult?.current_version || '...'"></code> · s3d <code>{ s3dVersion }</code></div>
 							</div>
 							<template x-if="versionLoading">
-								<span class="text-sm text-muted-foreground font-body">Checking…</span>
+								<span class="form-hint">Checking…</span>
 							</template>
 							<template x-if="versionErr">
-								<span class="text-sm text-muted-foreground font-body">Unable to check</span>
+								<span class="form-hint">Unable to check</span>
 							</template>
 							<template x-if="!versionLoading && !versionErr && versionResult?.update_available">
 								<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-body bg-amber-500/10 text-amber-500 border border-amber-500/20">
@@ -269,7 +269,7 @@ templ SettingsContent(csrfToken string, s3Cfg config.S3Config, sslCfg config.SSL
 								</span>
 							</template>
 						</div>
-						<div class="text-xs text-muted-foreground font-body border-t border-border pt-3">
+						<div class={ components.Cls("meta-text", "border-t border-border pt-3") }>
 							Updates are managed by { platformName }. To enable in-panel updates, deploy with the update sidecar.
 						</div>
 					</div>
@@ -284,15 +284,15 @@ templ SettingsContent(csrfToken string, s3Cfg config.S3Config, sslCfg config.SSL
 				<div class="flex items-center justify-between">
 					<div>
 						<div class="text-sm text-foreground font-body">Change admin password</div>
-						<div class="text-xs text-muted-foreground font-body">Update the password used to sign in to the panel.</div>
+						<div class="meta-text">Update the password used to sign in to the panel.</div>
 					</div>
-					<button type="button" class="btn-sm" @click="showChangePw = !showChangePw" x-text="showChangePw ? 'Cancel' : 'Change'"></button>
+					<button type="button" class="btn-ghost btn-size-default" @click="showChangePw = !showChangePw" x-text="showChangePw ? 'Cancel' : 'Change'"></button>
 				</div>
 				<div x-show="showChangePw" x-cloak class="space-y-3 pt-2">
 					@components.PasswordField("Current Password", "current-pw", "Current password", "current-password", templ.Attributes{"x-model": "currentPw"})
 					@components.PasswordField("New Password", "new-pw", "New password", "new-password", templ.Attributes{"x-model": "newPw", "minlength": "8"})
 					@components.PasswordField("Confirm New Password", "confirm-pw", "Confirm new password", "new-password", templ.Attributes{"x-model": "confirmPw", "minlength": "8"})
-					@components.Button("Change Password", components.ButtonOpts{Type: "button", Class: "btn-sm w-full", OnClick: "changePassword()", LoadingProp: "loading", LoadingLabel: "Saving…", Disabled: "loading"})
+					@components.Button("Change Password", components.ButtonOpts{Type: "button", Class: components.Cls("btn-primary", "btn-size-default w-full"), OnClick: "changePassword()", LoadingProp: "loading", LoadingLabel: "Saving…", Disabled: "loading"})
 				</div>
 			</div>
 		}
@@ -305,9 +305,9 @@ templ SettingsContent(csrfToken string, s3Cfg config.S3Config, sslCfg config.SSL
 				<div class="flex items-center justify-between">
 					<div>
 						<div class="text-sm text-foreground font-body">Restart backend</div>
-						<div class="text-xs text-muted-foreground font-body">Stops and starts the S3 backend. Active uploads will fail.</div>
+						<div class="meta-text">Stops and starts the S3 backend. Active uploads will fail.</div>
 					</div>
-					@components.Button("Restart", components.ButtonOpts{Type: "button", Class: "btn-danger text-sm", OnClick: "showRestart = true", LoadingProp: "restarting", LoadingLabel: "Restarting…", Disabled: "restarting"})
+					@components.Button("Restart", components.ButtonOpts{Type: "button", Class: components.Cls("btn-danger", "btn-size-default"), OnClick: "showRestart = true", LoadingProp: "restarting", LoadingLabel: "Restarting…", Disabled: "restarting"})
 				</div>
 				@components.Dialog("showRestart", "Restart backend", "This will stop and start the S3 backend. Any active uploads will fail.", "Restart", "btn-danger")
 			</div>

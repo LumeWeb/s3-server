@@ -16,10 +16,10 @@ templ BackupsContent(backups []BackupInfo, csrfToken string) {
 		<div class="card">
 			<div class="card-header flex items-center justify-between">
 				<div>
-					<h2 class="font-bold font-display text-foreground">Backups</h2>
-					<p class="text-xs text-muted-foreground font-body mt-0.5">SQLite database backups stored on disk</p>
+					<h2 class="section-title">Backups</h2>
+					<p class={ components.Cls("meta-text", "mt-0.5") }>SQLite database backups stored on disk</p>
 				</div>
-				@components.Button("+ Backup Now", components.ButtonOpts{Type: "button", Class: "btn-primary text-sm px-3 py-1.5", OnClick: "backupNow()", LoadingProp: "backing", LoadingLabel: "Backing up…", Disabled: "backing"})
+				@components.Button("+ Backup Now", components.ButtonOpts{Type: "button", Class: components.Cls("btn-primary", "btn-size-default"), OnClick: "backupNow()", LoadingProp: "backing", LoadingLabel: "Backing up…", Disabled: "backing"})
 			</div>
 			<div id="backups-list" class="divide-y divide-surface-border">
 				if len(backups) == 0 {

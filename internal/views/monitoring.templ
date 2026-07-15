@@ -14,17 +14,17 @@ templ MonitoringContent(stats UploadStats, csrfToken string) {
 	<div class="max-w-5xl mx-auto px-4 py-6 space-y-6" x-data="monitoringApp" x-init="init()">
 		<div class="flex items-center justify-between">
 			<div>
-				<h2 class="font-bold font-display text-foreground text-lg">Upload Pipeline</h2>
-				<p class="text-xs text-muted-foreground font-body mt-0.5">Real-time object upload statistics</p>
+				<h2 class={ components.Cls("section-title", "text-lg") }>Upload Pipeline</h2>
+				<p class={ components.Cls("meta-text", "mt-0.5") }>Real-time object upload statistics</p>
 			</div>
 			<div class="flex items-center gap-3">
-				<div class="flex items-center gap-1.5 text-xs text-muted-foreground font-body" x-show="!error" x-cloak>
+				<div class={ components.Cls("meta-text", "flex items-center gap-1.5") } x-show="!error" x-cloak>
 					<div class="h-1.5 w-1.5 rounded-full bg-primary animate-pulse"></div>
 					<span x-text="lastRefresh ? ('Updated ' + lastRefresh) : 'Connecting…'"></span>
 				</div>
 				<button
 					type="button"
-					class="text-sm btn-ghost px-2 py-1"
+					class={ components.Cls("btn-ghost", "btn-size-sm") }
 					@click={ "showPromGuide = true" }
 				>
 					Prometheus →
@@ -69,16 +69,16 @@ templ MonitoringContent(stats UploadStats, csrfToken string) {
 
 templ promGuideBody() {
 	<div class="p-5 space-y-4">
-		<p class="text-sm text-muted-foreground font-body">
+		<p class="form-hint">
 			Add a scrape job to your <code class="text-xs">prometheus.yml</code>:
 		</p>
 		<pre class="text-xs bg-muted rounded-lg p-3 overflow-x-auto font-mono"><code x-text="promScrapeConfig"></code></pre>
-		<p class="text-xs text-muted-foreground font-body">
+		<p class="meta-text">
 			Use your panel admin password as the Basic Auth password.
 			The username is <code class="text-xs">admin</code>.
 		</p>
 		<div class="flex justify-end">
-			@components.Button("Done", components.ButtonOpts{Type: "button", Class: "btn-primary text-sm px-3 py-1.5", OnClick: "showPromGuide = false"})
+			@components.Button("Done", components.ButtonOpts{Type: "button", Class: components.Cls("btn-primary", "btn-size-sm"), OnClick: "showPromGuide = false"})
 		</div>
 	</div>
 }
@@ -110,7 +110,7 @@ templ AccountSection(stats UploadStats) {
 			</span>
 		</div>
 		<!-- Hint when account not ready -->
-		<p class="text-xs text-muted-foreground font-body" x-show="account_ready === false" x-cloak>
+		<p class="meta-text" x-show="account_ready === false" x-cloak>
 			Account can take up to 5 minutes to be ready after first setup.
 		</p>
 		<!-- Skeleton storage bar while loading -->
@@ -138,7 +138,7 @@ templ AccountSection(stats UploadStats) {
 					:style={ `width: ${Math.min(accountPct(), 100)}%` }
 				></div>
 			</div>
-			<div class="text-xs text-muted-foreground font-body">
+			<div class="meta-text">
 				<span x-text="fmtAccountBytes(account_remaining_storage)">{ components.HumanBytes(int64(stats.AccountRemainingStorage)) }</span>
 				{ " remaining" }
 			</div>
@@ -164,7 +164,7 @@ templ AccountSection(stats UploadStats) {
 
 templ StatCard(label string, bindKey string, initial string) {
 	<div class="stat-card">
-		<div class="text-sm text-muted-foreground font-body">{ label }</div>
+		<div class="form-hint">{ label }</div>
 		<div class="text-xl font-bold font-display mt-1 text-foreground" x-text={ bindKey }>{ initial }</div>
 	</div>
 }

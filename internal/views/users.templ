@@ -25,12 +25,12 @@ templ UsersContent(users []UserInfo, csrfToken string) {
 		<div class="card">
 			<div class="card-header flex items-center justify-between">
 				<div>
-					<h2 class="font-bold font-display text-foreground">Users</h2>
-					<p class="text-xs text-muted-foreground font-body mt-0.5">Users own access keys and buckets. All keys under a user share access to that user's buckets. Create separate users to isolate storage between applications.</p>
+					<h2 class="section-title">Users</h2>
+					<p class={ components.Cls("meta-text", "mt-0.5") }>Users own access keys and buckets. All keys under a user share access to that user's buckets. Create separate users to isolate storage between applications.</p>
 				</div>
 				<button
 					type="button"
-					class="btn-primary text-sm px-3 py-1.5 whitespace-nowrap"
+					class={ components.Cls("btn-primary", "btn-size-default", "whitespace-nowrap") }
 					@click="showCreate = true"
 				>
 					+ Create User

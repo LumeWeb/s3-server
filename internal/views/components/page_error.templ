@@ -15,13 +15,13 @@ templ PageError(title string, message string) {
 				</div>
 				<div class="flex-1">
 					<h3 class="font-semibold font-display text-foreground">{ title }</h3>
-					<p class="mt-1 text-sm text-muted-foreground font-body">{ message }</p>
-					<p class="mt-2 text-sm text-muted-foreground font-body">
+					<p class={ Cls("form-hint", "mt-1") }>{ message }</p>
+					<p class={ Cls("form-hint", "mt-2") }>
 						Try reloading the page in a moment. If the problem persists, restart the backend from Settings.
 					</p>
 					<button
 						type="button"
-						class="btn-primary text-sm mt-4"
+						class={ Cls("btn-primary", "btn-size-default", "mt-4") }
 						@click={ "window.location.reload()" }
 					>
 						Reload page
