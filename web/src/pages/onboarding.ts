@@ -21,6 +21,8 @@ const Event = {
   GoToDashboard: 'goToDashboard',
 } as const
 
+type EventName = typeof Event[keyof typeof Event]
+
 // Server onboarding state values: must match Go OnboardingState constants.
 const ServerState = {
   Pending: 'pending',
@@ -44,6 +46,7 @@ type OnboardingContext = {
   phraseSaved: boolean
   showConfirmKey: boolean
   showSecretKey: boolean
+  showPw: boolean
   copiedField: string
   generatedCredentials: { accessKey: string; secretKey: string }
   // Stored API data needed later (not for display)
@@ -55,21 +58,21 @@ const onboardingMachine = createMachine(
     // Step 0: Set admin password
     password: state(
       transition(
-        Event.PasswordSet,
+        Event.PasswordSet as EventName,
         'connect',
         reduce((ctx: any) => ({ ...ctx, loading: false })),
       ),
     ),
     // Step 1: Connect to Sia (has sub-steps: connect → waiting → recovery)
     connect: state(
-      transition(Event.SiaStepChange, 'connect'),
-      transition(Event.AppKeySubmitted, 'finish'),
-      transition(Event.Back, 'password'),
+      transition(Event.SiaStepChange as EventName, 'connect'),
+      transition(Event.AppKeySubmitted as EventName, 'finish'),
+      transition(Event.Back as EventName, 'password'),
     ),
     // Step 2: Finish setup: generate credentials
     finish: state(
       transition(
-        Event.CredentialsGenerated,
+        Event.CredentialsGenerated as EventName,
         'finish',
         reduce((ctx: any, ev: any) => ({
           ...ctx,
@@ -80,8 +83,8 @@ const onboardingMachine = createMachine(
           },
         })),
       ),
-      transition(Event.GoToDashboard, 'complete'),
-      transition(Event.Back, 'connect', reduce((ctx: any) => ({ ...ctx, loading: false }))),
+      transition(Event.GoToDashboard as EventName, 'complete'),
+      transition(Event.Back as EventName, 'connect', reduce((ctx: any) => ({ ...ctx, loading: false }))),
     ),
     // Terminal state: redirect happens in Alpine watcher
     complete: state(),
@@ -152,8 +155,41 @@ const STEP_LABELS = ['Password', 'Connect', 'Finish']
 
 // --- Alpine component -------------------------------------------------------
 
-export function onboardingWizard(this: any) {
+interface OnboardingComponent extends AlpineMagic {
+  steps: string[]
+  currentStep: number
+  siaStep: string
+  loading: boolean
+  recoveryPhrase: string
+  phraseSaved: boolean
+  phraseCopied: boolean
+  showConfirmKey: boolean
+  showSecretKey: boolean
+  showPw: boolean
+  copiedField: string
+  generatedCredentials: { accessKey: string; secretKey: string }
+  adminPassword: string
+  adminPasswordConfirm: string
+  siaConfig: any
+  indexerSelection: string
+  customIndexer: string
+  insecureContext: boolean
+  seedMode: 'generated' | 'custom'
+  customSeedInput: string
+  customSeedError: string
+  _approvalAbort: null | { reject: (e: Error) => void }
+  siaSdk: any
+  siaBuilder: any
+  _urlSyncReady: boolean
+  _reactive: unknown
+  _service: { send: (event: string | { type: string; [key: string]: any }) => void; machine: { current: string } }
+  [key: string]: any
+}
+
+export function onboardingWizard(this: OnboardingComponent) {
   // Declare alpine first so the onChange callback can reference it without TDZ.
+  // Cast through `unknown` because Alpine injects magic props ($watch, $el, etc.)
+  // at runtime; the object literal only defines the component's own properties.
   const alpine = {
     // --- Reactive properties (synced from robot3 service) -------------------
     steps: STEP_LABELS,
@@ -186,9 +222,10 @@ export function onboardingWizard(this: any) {
       siaSdk: null as any,
       siaBuilder: null as any,
       _urlSyncReady: false,
+      _service: undefined as unknown as OnboardingComponent['_service'],
 
     // --- Lifecycle ----------------------------------------------------------
-    async init() {
+    async init(this: OnboardingComponent) {
       // Capture Alpine's reactive proxy for this component. Alpine wraps the
       // returned object in Alpine.reactive(), creating a proxy. We need to
       // write through THAT proxy (not the raw `alpine` object) so Alpine's
@@ -259,7 +296,7 @@ export function onboardingWizard(this: any) {
       this.loadSiaConfig()
     },
 
-    async restoreFromServer() {
+    async restoreFromServer(this: OnboardingComponent) {
       try {
         await apiReady()
         const data = await api()!.get('/_panel/api/onboarding/status')
@@ -286,7 +323,7 @@ export function onboardingWizard(this: any) {
       }
     },
 
-    async loadSiaConfig() {
+    async loadSiaConfig(this: OnboardingComponent) {
       try {
         await apiReady()
         this.siaConfig = await api()!.get('/_panel/api/onboarding/config')
@@ -300,7 +337,7 @@ export function onboardingWizard(this: any) {
     },
 
     // --- Step 0: Admin password --------------------------------------------
-    async setAdminPassword() {
+    async setAdminPassword(this: OnboardingComponent) {
       if (this.adminPassword.length < 8) {
         toast('Password must be at least 8 characters', 'error')
         return
@@ -337,7 +374,7 @@ export function onboardingWizard(this: any) {
       return u.replace(/\/+$/, '')
     },
 
-    async connectToSia() {
+    async connectToSia(this: OnboardingComponent) {
       this.loading = true
       try {
         await siaReady()
@@ -431,7 +468,7 @@ export function onboardingWizard(this: any) {
     },
 
     // --- Step 1: Cancel approval wait and return to connect form ---
-    cancelConnection() {
+    cancelConnection(this: OnboardingComponent) {
       if (this._approvalAbort) {
         this._approvalAbort.reject(new AbortError('User cancelled'))
         this._approvalAbort = null
@@ -441,7 +478,7 @@ export function onboardingWizard(this: any) {
     },
 
     // --- Step 1: Validate custom seed input ---
-    validateCustomSeed() {
+    validateCustomSeed(this: OnboardingComponent) {
       const phrase = this.customSeedInput.trim()
       if (!phrase) {
         this.customSeedError = 'Enter your 12-word recovery phrase'
@@ -459,7 +496,7 @@ export function onboardingWizard(this: any) {
     },
 
     // --- Step 1: Continue from seed step: register with chosen seed ---
-    async continueWithSeed() {
+    async continueWithSeed(this: OnboardingComponent) {
       // phraseSaved only applies to generated mode; custom mode validates the input instead
       if (this.seedMode === 'generated' && !this.phraseSaved) return
       if (this.seedMode === 'custom' && !this.customSeedInput.trim()) return
@@ -488,7 +525,7 @@ export function onboardingWizard(this: any) {
       }
     },
 
-    async submitAppKey() {
+    async submitAppKey(this: OnboardingComponent) {
       this.loading = true
       try {
         const appKeySeed = this.siaSdk.appKey().export()
@@ -521,7 +558,7 @@ export function onboardingWizard(this: any) {
     },
 
     // --- Step 2: Finish setup (auto-generate credentials) ------------------
-    async finishSetup() {
+    async finishSetup(this: OnboardingComponent) {
       this.loading = true
       try {
         const data = await api()!.post('/_panel/api/onboarding/access-keys', {})
@@ -540,7 +577,7 @@ export function onboardingWizard(this: any) {
       }
     },
 
-    goToDashboard() {
+    goToDashboard(this: OnboardingComponent) {
       this._service.send(Event.GoToDashboard)
     },
 
@@ -549,7 +586,7 @@ export function onboardingWizard(this: any) {
     // and the browser popstate handler call this to ensure siaBuilder cleanup
     // always happens. Returns true if the FSM transitioned, false if it only
     // cancelled a Sia sub-step (caller should retry to complete the move).
-    navigateBack(): boolean {
+    navigateBack(this: OnboardingComponent): boolean {
       // If in a Sia sub-step (waiting/recovery), reset to connect form first
       if (this.currentStep === 1 && this.siaStep !== 'connect') {
         this.cancelConnection()
@@ -565,7 +602,7 @@ export function onboardingWizard(this: any) {
       return true
     },
 
-    goBack() {
+    goBack(this: OnboardingComponent) {
       this.navigateBack()
     },
 
@@ -592,7 +629,7 @@ export function onboardingWizard(this: any) {
       })
     },
 
-    copyAllCredentials() {
+    copyAllCredentials(this: OnboardingComponent) {
       const text = `Access Key: ${this.generatedCredentials.accessKey}\nSecret Key: ${this.generatedCredentials.secretKey}`
       this.copyToClipboard(text)
     },
@@ -627,5 +664,5 @@ export function onboardingWizard(this: any) {
   // Expose service so Alpine methods can call this._service.send()
   ;(alpine as any)._service = service
 
-  return alpine
+  return alpine as unknown as OnboardingComponent
 }

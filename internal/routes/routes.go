@@ -5,20 +5,20 @@ const PanelPrefix = "/_panel"
 
 // Panel route paths.
 const (
-	PanelRoot       = PanelPrefix + "/"
-	PanelAssets     = PanelPrefix + "/assets"
-	PanelLogin      = PanelPrefix + "/login"
-	PanelLogout     = PanelPrefix + "/logout"
-	PanelHealthz    = PanelPrefix + "/healthz"
+	PanelRoot          = PanelPrefix + "/"
+	PanelAssets        = PanelPrefix + "/assets"
+	PanelLogin         = PanelPrefix + "/login"
+	PanelLogout        = PanelPrefix + "/logout"
+	PanelHealthz       = PanelPrefix + "/healthz"
 	PanelResetPassword = PanelPrefix + "/reset-password"
-	PanelDashboard  = PanelPrefix + "/dashboard"
-	PanelOnboarding = PanelPrefix + "/onboarding"
-	PanelSettings   = PanelPrefix + "/settings"
-	PanelUsers      = PanelPrefix + "/users"
-	PanelKeys       = PanelPrefix + "/keys"
-	PanelBuckets    = PanelPrefix + "/buckets"
-	PanelBackups    = PanelPrefix + "/backups"
-	PanelMonitoring = PanelPrefix + "/monitoring"
+	PanelDashboard     = PanelPrefix + "/dashboard"
+	PanelOnboarding    = PanelPrefix + "/onboarding"
+	PanelSettings      = PanelPrefix + "/settings"
+	PanelUsers         = PanelPrefix + "/users"
+	PanelKeys          = PanelPrefix + "/keys"
+	PanelBuckets       = PanelPrefix + "/buckets"
+	PanelBackups       = PanelPrefix + "/backups"
+	PanelMonitoring    = PanelPrefix + "/monitoring"
 )
 
 // Onboarding page sub-routes (state machine steps). No leading slash;
@@ -50,8 +50,8 @@ const (
 	PanelSSLConfig = PanelPrefix + "/api/ssl-config"
 	PanelLogConfig = PanelPrefix + "/api/log-config"
 
-	PanelAdminStats      = PanelPrefix + "/api/admin/stats"
-	PanelAdminBackup     = PanelPrefix + "/api/admin/backup"
+	PanelAdminStats  = PanelPrefix + "/api/admin/stats"
+	PanelAdminBackup = PanelPrefix + "/api/admin/backup"
 
 	PanelUsersAPI    = PanelPrefix + "/api/users"
 	PanelUserAPI     = PanelPrefix + "/api/users/:name"
@@ -67,14 +67,14 @@ const (
 	PanelSystemRestart = PanelPrefix + "/api/system/restart"
 	PanelSystemFlush   = PanelPrefix + "/api/system/flush"
 
-	// Password management (reset is pre-auth, change is authenticated).
-	PanelPasswordReset  = PanelPrefix + "/api/password/reset"
+	// Password management (change is authenticated JSON API).
+	// Reset is a pre-auth form POST to PanelResetPassword, not an API route.
 	PanelPasswordChange = PanelPrefix + "/api/password/change"
 
 	// Update control routes (sidecar mode only: adaptive based on /state volume).
 	PanelUpdateStatus  = PanelPrefix + "/api/update/status"
-	PanelUpdateToggle   = PanelPrefix + "/api/update/toggle"
-	PanelUpdateTrigger  = PanelPrefix + "/api/update/trigger"
+	PanelUpdateToggle  = PanelPrefix + "/api/update/toggle"
+	PanelUpdateTrigger = PanelPrefix + "/api/update/trigger"
 )
 
 // Form input field names.

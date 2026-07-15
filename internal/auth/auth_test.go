@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	storeMocks "go.lumeweb.com/s3-server/internal/store/mocks"
-	"go.lumeweb.com/s3-server/internal/routes"
 	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.lumeweb.com/s3-server/internal/routes"
+	storeMocks "go.lumeweb.com/s3-server/internal/store/mocks"
 )
 
 func newTestAuth(t *testing.T) (*Auth, *storeMocks.MockStore) {

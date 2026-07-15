@@ -203,7 +203,7 @@ func (s *Services) backupsPage(c *echo.Context) error {
 		}
 		return views.BackupInfo{
 			Filename:  info.Name(),
-			Size:       info.Size(),
+			Size:      info.Size(),
 			CreatedAt: formatPanelTime(info.ModTime()),
 		}, true
 	})

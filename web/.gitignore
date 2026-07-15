@@ -1,0 +1,4 @@
+
+# Vitest browser test artifacts
+.vitest-attachments/
+src/__tests__/__screenshots__/

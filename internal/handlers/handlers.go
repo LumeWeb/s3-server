@@ -48,10 +48,10 @@ type UpdaterManager interface {
 }
 
 type StatusResponse struct {
-	S3Status   string `json:"s3_status"`
-	KeyCount   int    `json:"key_count"`
-	Version    string `json:"version"`
-	InitError  string `json:"init_error,omitempty"`
+	S3Status  string `json:"s3_status"`
+	KeyCount  int    `json:"key_count"`
+	Version   string `json:"version"`
+	InitError string `json:"init_error,omitempty"`
 }
 
 type AccessKeyResponse struct {
@@ -82,21 +82,21 @@ type ConfigUpdateResponse struct {
 }
 
 type S3ConfigResponse struct {
-	Directory         string                `json:"directory"`
-	IndexerURL        string                `json:"indexer_url"`
+	Directory         string                 `json:"directory"`
+	IndexerURL        string                 `json:"indexer_url"`
 	AvailableIndexers []config.IndexerOption `json:"available_indexers"`
-	HostBases         []string              `json:"host_bases"`
-	DiskUsageLimit    uint64               `json:"disk_usage_limit"`
-	UploadWastePct    float64              `json:"upload_waste_pct"`
+	HostBases         []string               `json:"host_bases"`
+	DiskUsageLimit    uint64                 `json:"disk_usage_limit"`
+	UploadWastePct    float64                `json:"upload_waste_pct"`
 }
 
 type SetS3ConfigRequest struct {
-	Directory         string                `json:"directory"`
-	IndexerURL        string                `json:"indexer_url"`
+	Directory         string                 `json:"directory"`
+	IndexerURL        string                 `json:"indexer_url"`
 	AvailableIndexers []config.IndexerOption `json:"available_indexers"`
-	HostBases         []string              `json:"host_bases"`
-	DiskUsageLimit    uint64               `json:"disk_usage_limit"`
-	UploadWastePct    float64              `json:"upload_waste_pct"`
+	HostBases         []string               `json:"host_bases"`
+	DiskUsageLimit    uint64                 `json:"disk_usage_limit"`
+	UploadWastePct    float64                `json:"upload_waste_pct"`
 }
 
 type SSLConfigResponse struct {
@@ -243,42 +243,42 @@ type SSEBroker interface {
 }
 
 type Services struct {
-	store            store.Store
-	keyStore         func() backend.S3DStore
-	backend          func() backend.Backend
-	accountClient    func() backend.AccountClient
-	adminHandler     http.Handler
-	restarter        BackendRestarter
-	backendStatus    func() status.Status
-	initError        func() string
-	version          string
-	platformName     string
-	log              *zap.Logger
-	logLevelUpdater  LogLevelUpdater
-	csrfToken        func(*echo.Context) string
-	sseBroker        SSEBroker
-	updater          UpdaterManager
-	keyMu            sync.RWMutex
+	store           store.Store
+	keyStore        func() backend.S3DStore
+	backend         func() backend.Backend
+	accountClient   func() backend.AccountClient
+	adminHandler    http.Handler
+	restarter       BackendRestarter
+	backendStatus   func() status.Status
+	initError       func() string
+	version         string
+	platformName    string
+	log             *zap.Logger
+	logLevelUpdater LogLevelUpdater
+	csrfToken       func(*echo.Context) string
+	sseBroker       SSEBroker
+	updater         UpdaterManager
+	keyMu           sync.RWMutex
 }
 
 // NewServices creates a Services instance from the given config.
 func NewServices(cfg ServicesConfig) *Services {
 	return &Services{
-		store:            cfg.Store,
-		keyStore:         cfg.KeyStore,
-		backend:          cfg.Backend,
-		accountClient:    cfg.AccountClient,
-		adminHandler:     cfg.AdminHandler,
-		restarter:        cfg.Restarter,
-		backendStatus:    cfg.BackendStatus,
-		initError:        cfg.InitError,
-		version:          cfg.Version,
-		platformName:     cfg.PlatformName,
-		log:              cfg.Log,
-		logLevelUpdater:  cfg.LogLevelUpdater,
-		csrfToken:        cfg.CSRFToken,
-		sseBroker:        cfg.SSEBroker,
-		updater:          cfg.UpdateManager,
+		store:           cfg.Store,
+		keyStore:        cfg.KeyStore,
+		backend:         cfg.Backend,
+		accountClient:   cfg.AccountClient,
+		adminHandler:    cfg.AdminHandler,
+		restarter:       cfg.Restarter,
+		backendStatus:   cfg.BackendStatus,
+		initError:       cfg.InitError,
+		version:         cfg.Version,
+		platformName:    cfg.PlatformName,
+		log:             cfg.Log,
+		logLevelUpdater: cfg.LogLevelUpdater,
+		csrfToken:       cfg.CSRFToken,
+		sseBroker:       cfg.SSEBroker,
+		updater:         cfg.UpdateManager,
 	}
 }
 

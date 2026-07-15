@@ -1,8 +1,7 @@
 // Alpine component: backups page
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 import { api, reloadAfter, toast } from '../globals'
 
-export function backupsApp(this: any) {
+export function backupsApp(this: AlpineMagic) {
   return {
     backing: false,
     deleting: '' as string,
@@ -24,7 +23,7 @@ export function backupsApp(this: any) {
     async deleteBackup(filename: string) {
       this.deleting = filename
       try {
-        await api()!.delete(`/_panel/api/backups/${filename}`)
+        await api()!.del(`/_panel/api/backups/${filename}`)
         toast('Backup deleted', 'success')
         reloadAfter()
       } catch (e: any) {

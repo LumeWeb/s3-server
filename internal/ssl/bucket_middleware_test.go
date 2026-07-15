@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"go.lumeweb.com/s3-server/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.lumeweb.com/s3-server/internal/testutil"
 )
 
 // countingProvisioner tracks ProvisionCert calls via an atomic counter.

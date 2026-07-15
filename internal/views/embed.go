@@ -2,8 +2,8 @@ package views
 
 import (
 	"crypto/sha256"
-	"encoding/hex"
 	"embed"
+	"encoding/hex"
 )
 
 //go:embed css/tailwind.css

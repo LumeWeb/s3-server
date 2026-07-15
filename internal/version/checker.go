@@ -20,13 +20,16 @@ type Checker interface {
 }
 
 type CheckResult struct {
-	CurrentVersion string `json:"current_version"`
-	LatestVersion  string `json:"latest_version"`
+	CurrentVersion  string `json:"current_version"`
+	LatestVersion   string `json:"latest_version"`
 	UpdateAvailable bool   `json:"update_available"`
-	UpdateType     string `json:"update_type,omitempty"`
-	ImageName      string `json:"image_name"`
-	CheckedAt      string `json:"checked_at"`
+	UpdateType      string `json:"update_type,omitempty"`
+	ImageName       string `json:"image_name"`
+	CheckedAt       string `json:"checked_at"`
 }
+
+// tagFetcher returns the latest semver tag from a remote registry.
+type tagFetcher func(ctx context.Context, imageName string) (string, error)
 
 // GHCRChecker implements Checker by polling GHCR tags.
 type GHCRChecker struct {
@@ -34,6 +37,7 @@ type GHCRChecker struct {
 	imageName      string
 	interval       time.Duration
 	log            *zap.Logger
+	fetchTags      tagFetcher
 
 	mu     sync.RWMutex
 	result CheckResult
@@ -45,11 +49,18 @@ func NewChecker(currentVersion, imageName string, log *zap.Logger) *GHCRChecker 
 		imageName:      imageName,
 		interval:       24 * time.Hour,
 		log:            log,
+		fetchTags:      fetchLatestTag,
 		result: CheckResult{
 			CurrentVersion: currentVersion,
 			ImageName:      imageName,
 		},
 	}
+}
+
+// WithTagFetcher overrides the default GHCR tag fetcher (for testing).
+func (c *GHCRChecker) WithTagFetcher(f tagFetcher) *GHCRChecker {
+	c.fetchTags = f
+	return c
 }
 
 func (c *GHCRChecker) SetInterval(d time.Duration) {
@@ -102,7 +113,7 @@ func (c *GHCRChecker) check(ctx context.Context) {
 }
 
 func (c *GHCRChecker) checkOnce(ctx context.Context) (*CheckResult, error) {
-	latest, err := c.fetchLatestTag(ctx)
+	latest, err := c.fetchTags(ctx, c.imageName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch latest version: %w", err)
 	}
@@ -117,30 +128,59 @@ func (c *GHCRChecker) checkOnce(ctx context.Context) (*CheckResult, error) {
 		return nil, fmt.Errorf("failed to parse latest version: %w", err)
 	}
 
-	result := &CheckResult{
-		CurrentVersion:  c.currentVersion,
-		LatestVersion:   latest,
-		UpdateAvailable: latestVer.GreaterThan(current),
-		ImageName:       c.imageName,
+	result := compareVersions(c.currentVersion, latest, c.imageName, current, latestVer)
+	return &result, nil
+}
+
+// compareVersions is a pure function that builds a CheckResult from parsed
+// semver versions. Extracted for testability.
+func compareVersions(currentStr, latestStr, imageName string, current, latest *semver.Version) CheckResult {
+	result := CheckResult{
+		CurrentVersion:  currentStr,
+		LatestVersion:   latestStr,
+		UpdateAvailable: latest.GreaterThan(current),
+		ImageName:       imageName,
 		CheckedAt:       time.Now().Format(time.RFC3339),
 	}
 
 	if result.UpdateAvailable {
 		switch {
-		case latestVer.Major() > current.Major():
+		case latest.Major() > current.Major():
 			result.UpdateType = "major"
-		case latestVer.Minor() > current.Minor():
+		case latest.Minor() > current.Minor():
 			result.UpdateType = "minor"
 		default:
 			result.UpdateType = "patch"
 		}
 	}
 
-	return result, nil
+	return result
 }
 
-func (c *GHCRChecker) fetchLatestTag(ctx context.Context) (string, error) {
-	repo, err := name.NewRepository(c.imageName, name.WithDefaultRegistry("ghcr.io"))
+// pickLatestSemverTag scans a list of tags and returns the highest semver tag.
+// Non-semver tags are ignored. Returns an error if no valid semver tags exist.
+func pickLatestSemverTag(tags []string) (string, error) {
+	var latest *semver.Version
+	var latestStr string
+	for _, tag := range tags {
+		v, err := semver.NewVersion(tag)
+		if err != nil {
+			continue
+		}
+		if latest == nil || v.GreaterThan(latest) {
+			latest = v
+			latestStr = tag
+		}
+	}
+	if latest == nil {
+		return "", fmt.Errorf("no valid semver tags found")
+	}
+	return latestStr, nil
+}
+
+// fetchLatestTag lists tags from a GHCR repository and returns the highest semver tag.
+func fetchLatestTag(ctx context.Context, imageName string) (string, error) {
+	repo, err := name.NewRepository(imageName, name.WithDefaultRegistry("ghcr.io"))
 	if err != nil {
 		return "", fmt.Errorf("invalid image name: %w", err)
 	}
@@ -154,22 +194,5 @@ func (c *GHCRChecker) fetchLatestTag(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("no tags found")
 	}
 
-	var latest *semver.Version
-	var latestStr string
-	for _, tag := range tags {
-		v, err := semver.NewVersion(tag)
-		if err != nil {
-			continue
-		}
-		if latest == nil || v.GreaterThan(latest) {
-			latest = v
-			latestStr = tag
-		}
-	}
-
-	if latest == nil {
-		return "", fmt.Errorf("no valid semver tags found")
-	}
-
-	return latestStr, nil
+	return pickLatestSemverTag(tags)
 }

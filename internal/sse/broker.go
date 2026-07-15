@@ -64,10 +64,10 @@ type StatsEvent struct {
 
 	// Account info: zero values when the account client is not available.
 	AccountMaxPinnedData    uint64 `json:"account_max_pinned_data"`
-	AccountRemainingStorage  uint64 `json:"account_remaining_storage"`
-	AccountPinnedData        uint64 `json:"account_pinned_data"`
-	AccountPinnedSize        uint64 `json:"account_pinned_size"`
-	AccountReady             bool   `json:"account_ready"`
+	AccountRemainingStorage uint64 `json:"account_remaining_storage"`
+	AccountPinnedData       uint64 `json:"account_pinned_data"`
+	AccountPinnedSize       uint64 `json:"account_pinned_size"`
+	AccountReady            bool   `json:"account_ready"`
 }
 
 // StatsFetcher retrieves upload stats from the s3d admin API.
@@ -258,10 +258,10 @@ func (b *Broker) publishStatus(version string) {
 	}
 
 	evt := DashboardEvent{
-		S3Status:  st.String(),
-		KeyCount:   keyCount,
-		Version:    version,
-		Uptime:     time.Since(b.startedAt).Truncate(time.Second).String(),
+		S3Status: st.String(),
+		KeyCount: keyCount,
+		Version:  version,
+		Uptime:   time.Since(b.startedAt).Truncate(time.Second).String(),
 	}
 	b.mu.RLock()
 	initErrFn := b.initError

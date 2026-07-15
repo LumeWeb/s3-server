@@ -3,6 +3,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { api, apiAction, reloadAfter, toast } from '../globals'
+import { buildS3ConfigPayload, readJSONScript, validatePasswordMatch } from '../utils'
 
 interface SettingsData {
   s3: {
@@ -24,23 +25,24 @@ interface SettingsData {
     level: string
     format: string
   }
-}
-
-function readSettingsData(): SettingsData {
-  const el = document.getElementById('settings-data')
-  if (!el || !el.textContent) {
-    return {
-      s3: { directory: '', indexer_url: '', available_indexers: [], indexer_selection: '', custom_indexer: '', host_bases_input: '', disk_usage_limit: 0, upload_waste_pct: 0.1 },
-      ssl: { mode: '', acme_email: '', acme_dir_url: '' },
-      log: { level: 'info', format: 'json' },
-    }
+  update?: {
+    sidecar_mode: boolean
+    auto_update_on: boolean
+    last_digest: string
+    updater_log: string[]
   }
-  return JSON.parse(el.textContent)
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function settingsApp(this: any) {
-  const data = readSettingsData()
+const fallbackSettings: SettingsData = {
+  s3: { directory: '', indexer_url: '', available_indexers: [], indexer_selection: '', custom_indexer: '', host_bases_input: '', disk_usage_limit: 0, upload_waste_pct: 0.1 },
+  ssl: { mode: '', acme_email: '', acme_dir_url: '' },
+  log: { level: 'info', format: 'json' },
+}
+
+const fallbackUpdate = { sidecar_mode: false, auto_update_on: false, last_digest: '', updater_log: [] }
+
+export function settingsApp(this: AlpineMagic) {
+  const data = readJSONScript<SettingsData>('settings-data', fallbackSettings)
   return {
     s3: data.s3,
     ssl: data.ssl,
@@ -70,15 +72,8 @@ export function settingsApp(this: any) {
     },
 
     async saveS3Config() {
-      const hostBases = this.s3.host_bases_input.split(',').map((s: string) => s.trim()).filter((s: string) => s.length > 0)
-      const indexerURL = this.s3.indexer_selection === '__custom__' ? this.s3.custom_indexer : this.s3.indexer_selection
-      this.saveConfig('s3Saving', 'S3', '/_panel/api/s3-config', {
-        directory: this.s3.directory,
-        indexer_url: indexerURL,
-        host_bases: hostBases,
-        disk_usage_limit: this.s3.disk_usage_limit,
-        upload_waste_pct: this.s3.upload_waste_pct,
-      })
+      const payload = buildS3ConfigPayload(this.s3)
+      this.saveConfig('s3Saving', 'S3', '/_panel/api/s3-config', payload)
     },
 
     async saveSSLConfig() {
@@ -98,17 +93,7 @@ interface UpdateData {
   updater_log: string[]
 }
 
-function readUpdateData(): UpdateData {
-  const el = document.getElementById('settings-data')
-  if (!el || !el.textContent) {
-    return { sidecar_mode: false, auto_update_on: false, last_digest: '', updater_log: [] }
-  }
-  const parsed = JSON.parse(el.textContent)
-  return parsed.update || { sidecar_mode: false, auto_update_on: false, last_digest: '', updater_log: [] }
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function updateControlsApp(this: any) {
+export function updateControlsApp(this: AlpineMagic) {
   return {
     sidecarMode: false,
     autoUpdateOn: false,
@@ -118,11 +103,12 @@ export function updateControlsApp(this: any) {
     triggerLoading: false,
 
     init() {
-      const data = readUpdateData()
-      this.sidecarMode = data.sidecar_mode
-      this.autoUpdateOn = data.auto_update_on
-      this.lastDigest = data.last_digest
-      this.updaterLog = data.updater_log || []
+      const data = readJSONScript<SettingsData>('settings-data', fallbackSettings)
+      const update = (data.update || fallbackUpdate) as UpdateData
+      this.sidecarMode = update.sidecar_mode
+      this.autoUpdateOn = update.auto_update_on
+      this.lastDigest = update.last_digest
+      this.updaterLog = update.updater_log || []
     },
 
     async toggleAutoUpdate() {
@@ -160,7 +146,7 @@ export function updateControlsApp(this: any) {
 }
 
 // Flush all buckets sub-component
-export function flushAllApp(this: any) {
+export function flushAllApp(this: AlpineMagic) {
   return {
     flushing: false,
     showFlush: false,
@@ -180,7 +166,7 @@ export function flushAllApp(this: any) {
 }
 
 // Restart backend sub-component
-export function restartApp(this: any) {
+export function restartApp(this: AlpineMagic) {
   return {
     restarting: false,
     showRestart: false,
@@ -200,7 +186,7 @@ export function restartApp(this: any) {
 }
 
 // Change password sub-component
-export function changePasswordApp(this: any) {
+export function changePasswordApp(this: AlpineMagic) {
   return {
     showChangePw: false,
     loading: false,
@@ -210,12 +196,9 @@ export function changePasswordApp(this: any) {
     confirmPw: '',
 
     async changePassword() {
-      if (this.newPw !== this.confirmPw) {
-        toast('Passwords do not match', 'error')
-        return
-      }
-      if (this.newPw.length < 8) {
-        toast('Password must be at least 8 characters', 'error')
+      const err = validatePasswordMatch(this.newPw, this.confirmPw)
+      if (err) {
+        toast(err, 'error')
         return
       }
       this.loading = true
@@ -241,7 +224,7 @@ export function changePasswordApp(this: any) {
 }
 
 // Version check sub-component (non-sidecar mode only)
-export function versionCheckApp(this: any) {
+export function versionCheckApp(this: AlpineMagic) {
   return {
     versionResult: null as any,
     versionLoading: true,
@@ -260,7 +243,7 @@ export function versionCheckApp(this: any) {
 }
 
 // Nav flush sub-component (layout-level)
-export function navFlushApp(this: any) {
+export function navFlushApp(this: AlpineMagic) {
   return {
     showFlush: false,
     navOpen: false,

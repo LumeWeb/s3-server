@@ -5,7 +5,7 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite build --watch --mode development",
-    "test": "vitest run",
+    "test": "vitest run --config vitest.browser.config.ts browser/",
     "test:watch": "vitest",
     "build:css": "tailwindcss -i ../internal/views/css/input.css -o ../internal/views/css/tailwind.css --content \"../internal/views/**/*.templ\" --minify"
   },
@@ -21,8 +21,9 @@
   "devDependencies": {
     "@tailwindcss/cli": "^4",
     "@testing-library/dom": "^10.4.1",
-    "happy-dom": "^20.10.6",
-    "msw": "^2.14.6",
+    "@vitest/browser": "^4.1.10",
+    "@vitest/browser-playwright": "^4.1.10",
+    "playwright": "^1.61.1",
     "tailwindcss": "^4",
     "vite": "^6.0.0",
     "vitest": "^4.1.10"

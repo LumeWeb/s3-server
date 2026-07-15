@@ -100,21 +100,21 @@ type SelectOption struct {
 
 // SelectOpts configures a Select component.
 type SelectOpts struct {
-	Model   string            // Alpine x-model expression (e.g. "log.level")
+	Model   string // Alpine x-model expression (e.g. "log.level")
 	Options []SelectOption
-	Class   string            // CSS class (default: "form-select")
-	Extra   templ.Attributes  // Rare extra attributes (id, disabled, etc.)
+	Class   string           // CSS class (default: "form-select")
+	Extra   templ.Attributes // Rare extra attributes (id, disabled, etc.)
 }
 
 // DynamicSelectOpts configures a DynamicSelect component for selects whose
 // options are populated client-side via Alpine x-for (e.g. from JSON data).
 type DynamicSelectOpts struct {
-	Model           string            // Alpine x-model expression
-	ItemsExpr       string            // Alpine expression yielding []string of option values
-	ModelValue      string            // Server-side initial value for x-model (pre-selects an option)
-	StaticOptions   []SelectOption    // Extra static options appended after dynamic ones
-	Class           string            // CSS class (default: "form-select")
-	Extra           templ.Attributes  // Rare extra attributes (id, disabled, etc.)
+	Model         string           // Alpine x-model expression
+	ItemsExpr     string           // Alpine expression yielding []string of option values
+	ModelValue    string           // Server-side initial value for x-model (pre-selects an option)
+	StaticOptions []SelectOption   // Extra static options appended after dynamic ones
+	Class         string           // CSS class (default: "form-select")
+	Extra         templ.Attributes // Rare extra attributes (id, disabled, etc.)
 }
 
 // InputFieldOpts configures an InputField component.
@@ -122,20 +122,20 @@ type InputFieldOpts struct {
 	Label       string
 	ID          string
 	Hint        string
-	Model       string            // Alpine x-model expression (without x-model prefix)
-	Type        string            // "text" (default), "number", "email", "url"
+	Model       string // Alpine x-model expression (without x-model prefix)
+	Type        string // "text" (default), "number", "email", "url"
 	Placeholder string
-	Class       string            // CSS class (default: "form-input")
-	Extra       templ.Attributes  // Extra HTML attributes (required, min, step, etc.)
+	Class       string           // CSS class (default: "form-input")
+	Extra       templ.Attributes // Extra HTML attributes (required, min, step, etc.)
 }
 
 // ButtonOpts configures a Button component.
 type ButtonOpts struct {
-	Type         string            // "button" (default), "submit"
-	Class        string            // CSS class string
-	OnClick      string            // Alpine @click expression
-	Disabled     string            // Alpine :disabled expression
-	LoadingProp  string            // Alpine property for loading state (empty = no spinner)
-	LoadingLabel string            // Label shown when loading
-	Extra        templ.Attributes  // Rare extra attributes
+	Type         string           // "button" (default), "submit"
+	Class        string           // CSS class string
+	OnClick      string           // Alpine @click expression
+	Disabled     string           // Alpine :disabled expression
+	LoadingProp  string           // Alpine property for loading state (empty = no spinner)
+	LoadingLabel string           // Label shown when loading
+	Extra        templ.Attributes // Rare extra attributes
 }

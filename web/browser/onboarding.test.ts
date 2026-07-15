@@ -1,42 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { interpret } from 'robot3'
+import { stubOnboardingGlobals } from './onboarding-helpers'
 
 // We need to test goBack() and the FSM transition. The onboardingWizard
 // function is an Alpine component factory that creates a robot3 service in
 // init(). For unit testing, we call it directly and set up the minimum state
 // needed to test goBack().
 
-// Mock globals before importing
-vi.mock('../globals', () => ({
-  api: () => window.__api,
-  apiReady: () => Promise.resolve(),
-  toast: vi.fn(),
-  siaReady: () => Promise.resolve(),
-  siaSdk: () => window.__siaSdk,
-  copyToClipboard: vi.fn(),
-  reloadAfter: vi.fn(),
-}))
-
 // Stub window globals needed by the module
 beforeEach(() => {
-  window.__apiReady = Promise.resolve()
-  window.__sseToast = vi.fn()
-  window.__siaReady = Promise.resolve()
-  window.__siaSdk = {
-    Builder: vi.fn(),
-    generateRecoveryPhrase: vi.fn(() => 'test phrase word word word word word word word word word word word'),
-    validateRecoveryPhrase: vi.fn(),
-    AppKey: vi.fn(),
-  }
-  window.history.replaceState({}, '', '/_panel/onboarding/password')
+  stubOnboardingGlobals()
+  ;(window as any).__copyToClipboard = vi.fn().mockResolvedValue(undefined)
 })
 
-// Import after mocks are set up
-import { onboardingWizard } from '../pages/onboarding'
+import { onboardingWizard } from '../src/pages/onboarding'
 
 // Helper: create an Alpine-like component proxy
 function createComponent(): any {
-  const wizard = onboardingWizard()
+  const wizard = onboardingWizard.call({} as any)
   // Simulate Alpine's reactive proxy: just use the object directly
   const component = Object.create(wizard)
   // Initialize state that init() would normally set

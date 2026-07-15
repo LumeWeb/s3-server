@@ -57,7 +57,7 @@ type IndexerOption struct {
 	URL         string `koanf:"url" json:"url"`
 	Name        string `koanf:"name" json:"name"`
 	Description string `koanf:"description" json:"description"`
-	Logo        string `koanf:"logo" json:"logo,omitempty"`       // identifier: "pinner", "sia-storage", or empty for star
+	Logo        string `koanf:"logo" json:"logo,omitempty"` // identifier: "pinner", "sia-storage", or empty for star
 	BrandColor  string `koanf:"brand_color" json:"brand_color,omitempty"`
 	// ContrastColor is computed from BrandColor using WCAG relative luminance.
 	// Returns "#000000" or "#FFFFFF": whichever has higher contrast against BrandColor.
@@ -136,7 +136,7 @@ func DefaultConfig() PanelConfig {
 			Mode: SSLModeNone,
 		},
 		S3: S3Config{
-			Directory:         "/var/lib/s3-server",
+			Directory:  "/var/lib/s3-server",
 			IndexerURL: "https://sia.pinner.xyz",
 			AvailableIndexers: []IndexerOption{
 				{URL: "https://sia.pinner.xyz", Name: "Pinner", Description: "Our indexer, our support", Logo: "pinner", BrandColor: "#12A596"},

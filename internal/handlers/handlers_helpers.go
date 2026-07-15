@@ -52,7 +52,9 @@ func (s *Services) requireBackend(c *echo.Context) (backend.Backend, string, err
 func (s *Services) requireBackendOnly(c *echo.Context) (backend.Backend, error) {
 	b := s.getBackend()
 	if b == nil {
-		s.sendErr(c, func() error { return api.SendNotReady(c, api.TypeBackendNotInitialized, "backend hasn't started yet", nil) })
+		s.sendErr(c, func() error {
+			return api.SendNotReady(c, api.TypeBackendNotInitialized, "backend hasn't started yet", nil)
+		})
 		return nil, errResponseSent
 	}
 	return b, nil
@@ -63,7 +65,9 @@ func (s *Services) requireBackendOnly(c *echo.Context) (backend.Backend, error) 
 func (s *Services) requireKeyStore(c *echo.Context) (backend.S3DStore, error) {
 	ks := s.getKeyStore()
 	if ks == nil {
-		s.sendErr(c, func() error { return api.SendInternal(c, api.TypeBackendNotInitialized, "backend hasn't started yet", nil) })
+		s.sendErr(c, func() error {
+			return api.SendInternal(c, api.TypeBackendNotInitialized, "backend hasn't started yet", nil)
+		})
 		return nil, errResponseSent
 	}
 	return ks, nil

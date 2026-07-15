@@ -59,7 +59,7 @@ type UploadStats struct {
 	MultipartUploads int64
 
 	// Account info: zero values when the account client is not available.
-	AccountMaxPinnedData   uint64
+	AccountMaxPinnedData    uint64
 	AccountRemainingStorage uint64
 	AccountPinnedData       uint64
 	AccountPinnedSize       uint64

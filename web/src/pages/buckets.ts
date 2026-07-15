@@ -1,8 +1,37 @@
 // Alpine component: bucket lifecycle management
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 import { api, apiAction, reloadAfter } from '../globals'
+import { nextVersioningStatus, bucketLifecycleURL, bucketVersioningURL, bucketFlushURL, normalizeLifecycleRules } from '../utils'
 
-export function bucketPage(this: any) {
+interface BucketComponent extends AlpineMagic {
+  showCreate: boolean
+  createName: string
+  createOwner: string
+  createErr: string
+  creating: boolean
+  showFlush: boolean
+  flushBucketName: string
+  flushing: boolean
+  showLifecycle: boolean
+  lifecycleBucket: string
+  lifecycleRules: { prefix: string; expiration_days: number; status: string }[]
+  lifecycleLoading: boolean
+  lifecycleSaving: boolean
+  lifecycleErr: string
+  showVersioning: boolean
+  versioningBucket: string
+  versioningNewStatus: string
+  init(): void
+  openLifecycle(name: string): Promise<void>
+  saveLifecycle(): Promise<void>
+  deleteLifecycle(): Promise<void>
+  toggleVersioning(name: string, currentStatus: string): void
+  confirmVersioning(): Promise<void>
+  openFlush(name: string): void
+  confirmFlush(): Promise<void>
+  createBucket(): Promise<void>
+}
+
+export function bucketPage(this: BucketComponent) {
   return {
     showCreate: false,
     createName: '',
@@ -22,21 +51,22 @@ export function bucketPage(this: any) {
     lifecycleErr: '',
 
     init() {
-      this.$watch('showCreate', (v: boolean) => {
+      const self = this as BucketComponent
+      self.$watch('showCreate', (v: boolean) => {
         if (!v) {
-          this.createName = ''
-          this.createOwner = ''
-          this.createErr = ''
-          this.creating = false
+          self.createName = ''
+          self.createOwner = ''
+          self.createErr = ''
+          self.creating = false
         }
       })
-      this.$watch('showLifecycle', (v: boolean) => {
+      self.$watch('showLifecycle', (v: boolean) => {
         if (!v) {
-          this.lifecycleBucket = ''
-          this.lifecycleRules = []
-          this.lifecycleLoading = false
-          this.lifecycleSaving = false
-          this.lifecycleErr = ''
+          self.lifecycleBucket = ''
+          self.lifecycleRules = []
+          self.lifecycleLoading = false
+          self.lifecycleSaving = false
+          self.lifecycleErr = ''
         }
       })
     },
@@ -49,12 +79,8 @@ export function bucketPage(this: any) {
       this.lifecycleLoading = true
       this.showLifecycle = true
       try {
-        const cfg = await api()!.get('/_panel/api/buckets/' + encodeURIComponent(name) + '/lifecycle')
-        this.lifecycleRules = (cfg?.rules || []).map((r: any) => ({
-          prefix: r.prefix || '',
-          expiration_days: r.expiration_days || 30,
-          status: r.status || 'Enabled',
-        }))
+        const cfg = await api()!.get(bucketLifecycleURL(name, 'get'))
+        this.lifecycleRules = normalizeLifecycleRules(cfg?.rules)
       } catch (e: any) {
         this.lifecycleErr = e.message
       } finally {
@@ -69,7 +95,7 @@ export function bucketPage(this: any) {
         await apiAction(
           'Saving lifecycle rules…',
           () => api()!.put(
-            '/_panel/api/buckets/' + encodeURIComponent(this.lifecycleBucket) + '/lifecycle',
+            bucketLifecycleURL(this.lifecycleBucket, 'put'),
             { rules: this.lifecycleRules },
           ),
           'Lifecycle rules saved',
@@ -89,7 +115,7 @@ export function bucketPage(this: any) {
         await apiAction(
           'Deleting lifecycle rules…',
           () => api()!.del(
-            '/_panel/api/buckets/' + encodeURIComponent(this.lifecycleBucket) + '/lifecycle',
+            bucketLifecycleURL(this.lifecycleBucket, 'delete'),
           ),
           'Lifecycle rules deleted',
         )
@@ -108,7 +134,7 @@ export function bucketPage(this: any) {
 
     toggleVersioning(name: string, currentStatus: string) {
       this.versioningBucket = name
-      this.versioningNewStatus = currentStatus === 'Enabled' ? 'Suspended' : 'Enabled'
+      this.versioningNewStatus = nextVersioningStatus(currentStatus)
       this.showVersioning = true
     },
 
@@ -120,7 +146,7 @@ export function bucketPage(this: any) {
         await apiAction(
           'Versioning ' + (newStatus === 'Enabled' ? 'enabling' : 'suspending') + '…',
           () => api()!.put(
-            '/_panel/api/buckets/' + encodeURIComponent(name) + '/versioning',
+            bucketVersioningURL(name),
             { status: newStatus },
           ),
           'Versioning ' + (newStatus === 'Enabled' ? 'enabled' : 'suspended') + ' for ' + name,
@@ -142,7 +168,7 @@ export function bucketPage(this: any) {
         await apiAction(
           'Flushing "' + this.flushBucketName + '"…',
           () => api()!.post(
-            '/_panel/api/buckets/' + encodeURIComponent(this.flushBucketName) + '/flush',
+            bucketFlushURL(this.flushBucketName),
           ),
           'Bucket "' + this.flushBucketName + '" flushed',
         )
