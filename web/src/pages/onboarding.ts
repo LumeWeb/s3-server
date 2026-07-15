@@ -1,12 +1,17 @@
-// Alpine component: onboarding wizard — powered by robot3 FSM
+// Alpine component: onboarding wizard, powered by robot3 FSM
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { createMachine, interpret, state, transition, reduce } from 'robot3'
-import { api, apiReady, toast, siaReady, siaSdk } from '../globals'
+import { api, apiReady, toast, siaReady, siaSdk, copyToClipboard as copyText } from '../globals'
 
 // --- FSM definition ---------------------------------------------------------
 
-// Event names — enum, not string literals, so renames are caught at compile time.
+// Error thrown when user cancels the approval wait.
+class AbortError extends Error {
+  name = 'AbortError'
+}
+
+// Event names: enum, not string literals, so renames are caught at compile time.
 const Event = {
   PasswordSet: 'passwordSet',
   SiaStepChange: 'siaStepChange',
@@ -16,7 +21,7 @@ const Event = {
   GoToDashboard: 'goToDashboard',
 } as const
 
-// Server onboarding state values — must match Go OnboardingState constants.
+// Server onboarding state values: must match Go OnboardingState constants.
 const ServerState = {
   Pending: 'pending',
   AdminSet: 'admin_password_set',
@@ -61,7 +66,7 @@ const onboardingMachine = createMachine(
       transition(Event.AppKeySubmitted, 'finish'),
       transition(Event.Back, 'password'),
     ),
-    // Step 2: Finish setup — generate credentials
+    // Step 2: Finish setup: generate credentials
     finish: state(
       transition(
         Event.CredentialsGenerated,
@@ -77,7 +82,7 @@ const onboardingMachine = createMachine(
       ),
       transition(Event.GoToDashboard, 'complete'),
     ),
-    // Terminal state — redirect happens in Alpine watcher
+    // Terminal state: redirect happens in Alpine watcher
     complete: state(),
   },
   (): OnboardingContext => ({
@@ -94,7 +99,39 @@ const onboardingMachine = createMachine(
   }),
 )
 
-// Map FSM state names → step indices for the step indicator
+// Map FSM state names → URL step slugs (must match Go routes).
+const STATE_SLUGS: Record<string, string> = {
+  [FsmState.Password]: 'password',
+  [FsmState.Connect]: 'connect',
+  [FsmState.Finish]: 'finish',
+  [FsmState.Complete]: 'finish',
+}
+
+// Map URL step slugs → FSM state names.
+const SLUG_STATES: Record<string, string> = {
+  password: FsmState.Password,
+  connect: FsmState.Connect,
+  finish: FsmState.Finish,
+}
+
+function currentSlug(): string {
+  const parts = window.location.pathname.split('/')
+  return parts[parts.length - 1] || 'password'
+}
+
+function pushUrl(slug: string) {
+  const url = `/_panel/onboarding/${slug}`
+  if (window.location.pathname !== url) {
+    window.history.pushState({ slug }, '', url)
+  }
+}
+
+function replaceUrl(slug: string) {
+  const url = `/_panel/onboarding/${slug}`
+  if (window.location.pathname !== url) {
+    window.history.replaceState({ slug }, '', url)
+  }
+}
 const STEP_MAP: Record<string, number> = {
   [FsmState.Password]: 0,
   [FsmState.Connect]: 1,
@@ -137,8 +174,17 @@ export function onboardingWizard(this: any) {
     indexerSelection: '',
     customIndexer: '',
     insecureContext: false,
-    // Not displayed — kept for API calls
-    siaSdk: null as any,
+    // Seed mode: 'generated' (default) or 'custom'
+    seedMode: 'generated' as 'generated' | 'custom',
+    customSeedInput: '',
+    customSeedError: '',
+      // --- Abort controller for cancelling approval wait ---
+    _approvalAbort: null as null | { reject: (e: Error) => void },
+
+    // Not displayed: kept for API calls
+      siaSdk: null as any,
+      siaBuilder: null as any,
+      _urlSyncReady: false,
 
     // --- Lifecycle ----------------------------------------------------------
     async init() {
@@ -148,7 +194,7 @@ export function onboardingWizard(this: any) {
       // directives detect the changes. `this` inside init IS that proxy.
       ;(this as any)._reactive = this
 
-      // Don't block Alpine initialization on __apiReady — just fire and forget
+      // Don't block Alpine initialization on __apiReady: just fire and forget
       // so x-cloak is removed immediately and the password UI is visible.
       this.insecureContext = !window.isSecureContext
 
@@ -161,12 +207,47 @@ export function onboardingWizard(this: any) {
 
       this.$el.addEventListener('dialog-confirm', () => {
         // Dialog already closes itself by setting showConfirmKey = false
-        // before dispatching this event — don't guard on showConfirmKey.
-        this.submitAppKey()
+        // before dispatching this event: don't guard on showConfirmKey.
+        this.continueWithSeed()
       })
 
       // Restore onboarding progress from server state
-      this.restoreFromServer()
+      await this.restoreFromServer()
+      // Enable URL sync and replace URL to match current FSM state
+      this._urlSyncReady = true
+      const fsmState = this._service.machine.current
+      const initialSlug = STATE_SLUGS[fsmState] || 'password'
+      replaceUrl(initialSlug)
+
+      // Handle browser back/forward: sync URL to FSM if valid, else redirect back
+      window.addEventListener('popstate', (e: PopStateEvent) => {
+        const slug = currentSlug()
+        const targetState = SLUG_STATES[slug]
+        const currentState = this._service.machine.current
+        // Only allow navigating to same or earlier steps
+        if (!targetState || STEP_MAP[targetState] > STEP_MAP[currentState]) {
+          // Invalid: push the user back to their current step
+          const currentSlugName = STATE_SLUGS[currentState] || 'password'
+          replaceUrl(currentSlugName)
+          return
+        }
+        // Navigate FSM to the target step by sending appropriate events
+        const targetStep = STEP_MAP[targetState]
+        const currentStepNum = STEP_MAP[currentState]
+        if (targetStep < currentStepNum) {
+          // Going backward: send Back events, but only if the FSM
+          // supports them — otherwise keep the URL in sync with the
+          // real state.
+          const before = this._service.machine.current
+          for (let i = currentStepNum; i > targetStep; i--) {
+            this._service.send(Event.Back)
+          }
+          if (this._service.machine.current === before) {
+            replaceUrl(STATE_SLUGS[before] || 'password')
+          }
+        }
+      })
+
       // Load Sia config (non-blocking)
       this.loadSiaConfig()
     },
@@ -180,7 +261,7 @@ export function onboardingWizard(this: any) {
           window.location.href = '/_panel/dashboard'
           return
         }
-        // Only restore forward — never jump the user backwards or to a state
+        // Only restore forward: never jump the user backwards or to a state
         // they've already passed. This prevents the race where restoreFromServer
         // resolves after the user has already started interacting.
         const serverStep = SERVER_STEP_MAP[data.state] ?? 0
@@ -194,7 +275,7 @@ export function onboardingWizard(this: any) {
           }
         }
       } catch (e: any) {
-        // Swallow — stay on step 0 (password)
+        // Swallow: stay on step 0 (password)
       }
     },
 
@@ -204,7 +285,7 @@ export function onboardingWizard(this: any) {
         this.siaConfig = await api()!.get('/_panel/api/onboarding/config')
         this.indexerSelection =
           this.siaConfig.indexer_url ||
-          (this.siaConfig.available_indexers && this.siaConfig.available_indexers[0]) ||
+          (this.siaConfig.available_indexers?.[0]?.url) ||
           ''
       } catch (e: any) {
         toast('Failed to load onboarding config: ' + e.message, 'error')
@@ -307,25 +388,96 @@ export function onboardingWizard(this: any) {
         window.open(builder.responseUrl(), '_blank')
         this.siaStep = 'waiting'
 
+        // Race waitForApproval against a user-cancellable abort promise.
+        // The SDK doesn't accept an AbortSignal, so we race.
+        const abortPromise = new Promise<never>((_, reject) => {
+          this._approvalAbort = { reject: (e: Error) => reject(e) }
+        })
         try {
-          await builder.waitForApproval()
+          await Promise.race([builder.waitForApproval(), abortPromise])
         } catch (e: any) {
+          if (e instanceof AbortError || e.name === 'AbortError') {
+            // User cancelled: reset to connect form
+            this.siaStep = 'connect'
+            this.loading = false
+            return
+          }
           const msg = (e.message || '').toLowerCase()
           if (/error sending request|failed to fetch|networkerror/.test(msg))
             throw new Error(
               `Approval status check to "${indexerURL}" was blocked. This is typically a CORS issue on the portal proxy.`,
             )
           throw new Error(`Approval check failed: ${e.message}`)
+        } finally {
+          this._approvalAbort = null
         }
         this.recoveryPhrase = generateRecoveryPhrase()
         validateRecoveryPhrase(this.recoveryPhrase)
-        this.siaSdk = await builder.register(this.recoveryPhrase)
+        this.siaBuilder = builder
         this.siaStep = 'recovery'
       } catch (e: any) {
         this.siaStep = 'connect'
         toast(e.message, 'error')
       } finally {
         this.loading = false
+      }
+    },
+
+    // --- Step 1: Cancel approval wait and return to connect form ---
+    cancelConnection() {
+      if (this._approvalAbort) {
+        this._approvalAbort.reject(new AbortError('User cancelled'))
+        this._approvalAbort = null
+      }
+      this.siaBuilder = null
+      this.siaStep = 'connect'
+    },
+
+    // --- Step 1: Validate custom seed input ---
+    validateCustomSeed() {
+      const phrase = this.customSeedInput.trim()
+      if (!phrase) {
+        this.customSeedError = 'Enter your 12-word recovery phrase'
+        return false
+      }
+      try {
+        const { validateRecoveryPhrase } = siaSdk()
+        validateRecoveryPhrase(phrase)
+        this.customSeedError = ''
+        return true
+      } catch {
+        this.customSeedError = 'Invalid recovery phrase. Check that all 12 words are correct and in the right order.'
+        return false
+      }
+    },
+
+    // --- Step 1: Continue from seed step: register with chosen seed ---
+    async continueWithSeed() {
+      // phraseSaved only applies to generated mode; custom mode validates the input instead
+      if (this.seedMode === 'generated' && !this.phraseSaved) return
+      if (this.seedMode === 'custom' && !this.customSeedInput.trim()) return
+      if (!this.siaBuilder) {
+        toast('Connection expired. Please reconnect to Sia.', 'error')
+        this.siaStep = 'connect'
+        return
+      }
+      this.loading = true
+      try {
+        const { validateRecoveryPhrase } = siaSdk()
+        const seed = this.seedMode === 'custom' ? this.customSeedInput.trim() : this.recoveryPhrase
+        if (this.seedMode === 'custom') {
+          try {
+            validateRecoveryPhrase(seed)
+          } catch {
+            throw new Error('Invalid recovery phrase. Check that all 12 words are correct and in the right order.')
+          }
+        }
+        this.siaSdk = await this.siaBuilder.register(seed)
+        // submitAppKey handles its own loading state and error toasts
+        await this.submitAppKey()
+      } catch (e: any) {
+        this.loading = false
+        toast(e.message, 'error')
       }
     },
 
@@ -400,19 +552,13 @@ export function onboardingWizard(this: any) {
 
     // --- Clipboard helpers --------------------------------------------------
     copyToClipboard(text: string, field?: string) {
-      navigator.clipboard
-        .writeText(text)
-        .then(() => {
-          if (field) {
-            const r = (this as any)._reactive || this
-            r.copiedField = field
-            setTimeout(() => { r.copiedField = '' }, 2000)
-          }
-          toast('Copied to clipboard', 'success')
-        })
-        .catch(() => {
-          toast('Failed to copy', 'error')
-        })
+      copyText(text).then(() => {
+        if (field) {
+          const r = (this as any)._reactive || this
+          r.copiedField = field
+          setTimeout(() => { r.copiedField = '' }, 2000)
+        }
+      })
     },
 
     copyAllCredentials() {
@@ -421,7 +567,7 @@ export function onboardingWizard(this: any) {
     },
   }
 
-  // Create the robot3 service — must be after `alpine` is defined so the
+  // Create the robot3 service: must be after `alpine` is defined so the
   // onChange callback can safely reference it (no TDZ).
   // We write through `alpine._reactive` (Alpine's reactive proxy, captured
   // in init()) so Alpine's directives detect the changes. Writing to the
@@ -437,6 +583,11 @@ export function onboardingWizard(this: any) {
     r.phraseSaved = ctx.phraseSaved
     r.showConfirmKey = ctx.showConfirmKey
     r.generatedCredentials = ctx.generatedCredentials
+    // Sync URL with FSM state (skip during initial restore: init handles that)
+    if (r._urlSyncReady) {
+      const slug = STATE_SLUGS[fs]
+      if (slug) pushUrl(slug)
+    }
     if (fs === FsmState.Complete) {
       window.location.href = '/_panel/dashboard'
     }
