@@ -29,13 +29,13 @@ templ MonitoringContent(stats UploadStats, csrfToken string) {
 				>
 					Prometheus →
 				</button>
-				</div>
-				</div>
-				@components.ModalShell(components.ModalShellOpts{
-					ShowProp:  "showPromGuide",
-					Title:     "Prometheus Setup",
-					MaxWidth:  "max-w-lg",
-				}, promGuideBody())
+			</div>
+		</div>
+		@components.ModalShell(components.ModalShellOpts{
+			ShowProp: "showPromGuide",
+			Title:    "Prometheus Setup",
+			MaxWidth: "max-w-lg",
+		}, promGuideBody())
 		if stats.AccountMaxPinnedData > 0 {
 			@AccountSection(stats)
 		}

@@ -15,7 +15,10 @@ func TestDefaultConfig(t *testing.T) {
 	assert.Equal(t, SSLModeNone, cfg.SSL.Mode)
 	assert.Equal(t, "/var/lib/s3-server", cfg.S3.Directory)
 	assert.Equal(t, "https://sia.pinner.xyz", cfg.S3.IndexerURL)
-	assert.Equal(t, []string{"https://sia.pinner.xyz", "https://sia.storage"}, cfg.S3.AvailableIndexers)
+	assert.Equal(t, []IndexerOption{
+		{URL: "https://sia.pinner.xyz", Name: "Pinner", Description: "Our indexer, our support", Logo: "pinner", BrandColor: "#12A596", ContrastColor: "#000000"},
+		{URL: "https://sia.storage", Name: "Sia Storage", Description: "Are you already using Sia Storage? Connect here.", Logo: "sia-storage", BrandColor: "#EFF2ED", ContrastColor: "#000000"},
+	}, cfg.S3.AvailableIndexers)
 	assert.Equal(t, "info", cfg.Log.Level)
 	assert.Equal(t, "json", cfg.Log.Format)
 	assert.Empty(t, cfg.AdminPasswordHash)
@@ -56,10 +59,13 @@ func TestLoad_Save_Roundtrip(t *testing.T) {
 			ACMEEmail: "admin@example.com",
 		},
 		S3: S3Config{
-			Directory:         "/data/s3d",
-			IndexerURL:        "https://custom.sia.storage",
-			AvailableIndexers: []string{"https://sia.pinner.xyz", "https://sia.storage"},
-			HostBases:          []string{"s3.example.com"},
+			Directory:  "/data/s3d",
+			IndexerURL: "https://custom.sia.storage",
+			AvailableIndexers: []IndexerOption{
+				{URL: "https://sia.pinner.xyz", Name: "Pinner"},
+				{URL: "https://sia.storage", Name: "Sia Storage"},
+			},
+			HostBases: []string{"s3.example.com"},
 		},
 		Log: LogConfig{
 			Level:  "debug",
