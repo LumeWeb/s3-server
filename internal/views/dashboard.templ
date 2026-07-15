@@ -25,15 +25,15 @@ templ DashboardContent(version string, groups []UserKeyGroup, userCount int, buc
 			<div class="stat-card">
 				<div class="flex items-center justify-around divide-x divide-surface-border">
 					<div class="text-center px-2">
-						<div class={ components.Cls("section-title", "text-xl") }>{ fmt.Sprintf("%d", userCount) }</div>
+						<div class={ components.Cls("section-title", "text-2xl") }>{ fmt.Sprintf("%d", userCount) }</div>
 						<div class={ components.Cls("meta-text", "mt-0.5") }>Users</div>
 					</div>
 					<div class="text-center px-4">
-						<div class={ components.Cls("section-title", "text-xl") } x-text="keyCount"></div>
+						<div class={ components.Cls("section-title", "text-2xl") } x-text="keyCount"></div>
 						<div class={ components.Cls("meta-text", "mt-0.5") }>Access Keys</div>
 					</div>
 					<div class="text-center px-2">
-						<div class={ components.Cls("section-title", "text-xl") }>{ fmt.Sprintf("%d", bucketCount) }</div>
+						<div class={ components.Cls("section-title", "text-2xl") }>{ fmt.Sprintf("%d", bucketCount) }</div>
 						<div class={ components.Cls("meta-text", "mt-0.5") }>Buckets</div>
 					</div>
 				</div>
@@ -79,7 +79,7 @@ templ DashboardContent(version string, groups []UserKeyGroup, userCount int, buc
 				<div class="p-3 space-y-1">
 					@quickAction("Create User", "/_panel/users")
 					@quickAction("Create Bucket", "/_panel/buckets")
-					@quickAction("Backup Now", "/_panel/backups")
+					@quickAction("Backups", "/_panel/backups")
 					@quickAction("View Monitoring", "/_panel/monitoring")
 					@quickAction("Settings", "/_panel/settings")
 				</div>

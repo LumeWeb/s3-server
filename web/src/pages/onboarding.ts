@@ -81,6 +81,7 @@ const onboardingMachine = createMachine(
         })),
       ),
       transition(Event.GoToDashboard, 'complete'),
+      transition(Event.Back, 'connect', reduce((ctx: any) => ({ ...ctx, loading: false }))),
     ),
     // Terminal state: redirect happens in Alpine watcher
     complete: state(),
@@ -231,16 +232,22 @@ export function onboardingWizard(this: any) {
           replaceUrl(currentSlugName)
           return
         }
-        // Navigate FSM to the target step by sending appropriate events
+        // Navigate FSM to the target step by sending Back events, but only if the FSM
+        // supports them — otherwise keep the URL in sync with the
+        // real state.
         const targetStep = STEP_MAP[targetState]
         const currentStepNum = STEP_MAP[currentState]
         if (targetStep < currentStepNum) {
-          // Going backward: send Back events, but only if the FSM
-          // supports them — otherwise keep the URL in sync with the
-          // real state.
+          // Going backward: use navigateBack to ensure siaBuilder cleanup
+          // happens on every transition. If navigateBack returns false (was
+          // in a Sia sub-step and only cancelled), loop again to complete the
+          // transition.
           const before = this._service.machine.current
           for (let i = currentStepNum; i > targetStep; i--) {
-            this._service.send(Event.Back)
+            if (!this.navigateBack()) {
+              // Sub-step cancellation: retry to complete the transition
+              this.navigateBack()
+            }
           }
           if (this._service.machine.current === before) {
             replaceUrl(STATE_SLUGS[before] || 'password')
@@ -535,6 +542,31 @@ export function onboardingWizard(this: any) {
 
     goToDashboard() {
       this._service.send(Event.GoToDashboard)
+    },
+
+    // --- Step navigation: back button --------------------------------------
+    // Single source of truth for backward navigation. Both the UI Back button
+    // and the browser popstate handler call this to ensure siaBuilder cleanup
+    // always happens. Returns true if the FSM transitioned, false if it only
+    // cancelled a Sia sub-step (caller should retry to complete the move).
+    navigateBack(): boolean {
+      // If in a Sia sub-step (waiting/recovery), reset to connect form first
+      if (this.currentStep === 1 && this.siaStep !== 'connect') {
+        this.cancelConnection()
+        return false
+      }
+      // Going back from step 2 to step 1: the siaBuilder from the previous
+      // SSO session is stale. Reset to connect so the user re-authenticates,
+      // preventing seed swaps on an existing SSO session.
+      if (this.currentStep === 2) {
+        this.cancelConnection()
+      }
+      this._service.send(Event.Back)
+      return true
+    },
+
+    goBack() {
+      this.navigateBack()
     },
 
     // --- Reset onboarding ---------------------------------------------------

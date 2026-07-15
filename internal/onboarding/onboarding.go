@@ -75,14 +75,14 @@ type StatusResponse struct {
 }
 
 type ConfigResponse struct {
-	IndexerURL        string                `json:"indexer_url"`
+	IndexerURL        string                 `json:"indexer_url"`
 	AvailableIndexers []config.IndexerOption `json:"available_indexers"`
-	AppID             string                `json:"app_id"`
-	AppName           string                `json:"app_name"`
-	AppDesc           string                `json:"app_description"`
-	LogoURL           string                `json:"logo_url"`
-	ServiceURL        string                `json:"service_url"`
-	CallbackURL       string                `json:"callback_url"`
+	AppID             string                 `json:"app_id"`
+	AppName           string                 `json:"app_name"`
+	AppDesc           string                 `json:"app_description"`
+	LogoURL           string                 `json:"logo_url"`
+	ServiceURL        string                 `json:"service_url"`
+	CallbackURL       string                 `json:"callback_url"`
 }
 
 type OnboardingStepResponse struct {
@@ -215,9 +215,10 @@ func (svc *Service) SetAppKeyHandler(c *echo.Context) error {
 	if state == StateComplete {
 		return api.SendError(c, api.ErrOnboardingComplete, api.TypeOnboardingComplete, "onboarding already complete", nil)
 	}
-	if state != StateAdminSet {
+	if state != StateAdminSet && state != StateAppKeySet {
 		return api.SendError(c, api.ErrOnboardingRequired, api.TypeOnboardingRequired, "admin password must be set first", nil)
 	}
+	entryState := state // for correct rollback on persist failure
 
 	var req SetAppKeyRequest
 	if err := c.Bind(&req); err != nil {
@@ -291,7 +292,7 @@ func (svc *Service) SetAppKeyHandler(c *echo.Context) error {
 	// the FSM so the store and FSM stay consistent for a clean retry.
 	if err := svc.store.SetOnboardingState(string(StateAppKeySet)); err != nil {
 		svc.log.Error("failed to persist onboarding state", zap.Error(err))
-		svc.fsm.SetState(StateAdminSet) // best-effort rollback
+		svc.fsm.SetState(entryState) // best-effort rollback to original entry state
 		if closeErr := sqliteStore.Close(); closeErr != nil {
 			svc.log.Error("failed to close database after persist error", zap.Error(closeErr))
 		}
@@ -299,6 +300,13 @@ func (svc *Service) SetAppKeyHandler(c *echo.Context) error {
 	}
 
 	svc.mu.Lock()
+	// Close any previously-opened store before replacing it (re-submission
+	// from StateAppKeySet leaves the prior handle open).
+	if svc.sqliteStore != nil {
+		if closeErr := svc.sqliteStore.Close(); closeErr != nil {
+			svc.log.Error("failed to close previous sqlite store", zap.Error(closeErr))
+		}
+	}
 	svc.sqliteStore = sqliteStore
 	svc.mu.Unlock()
 	svc.log.Info("app key stored")
