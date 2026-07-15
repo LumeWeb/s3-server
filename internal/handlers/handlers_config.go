@@ -15,12 +15,12 @@ import (
 func (s *Services) getS3Config(c *echo.Context) error {
 	cfg := s.store.S3Config()
 	return c.JSON(http.StatusOK, S3ConfigResponse{
-		Directory:          cfg.Directory,
-		IndexerURL:         cfg.IndexerURL,
-		AvailableIndexers:  cfg.AvailableIndexers,
-		HostBases:          cfg.HostBases,
-		DiskUsageLimit:     cfg.DiskUsageLimit,
-		UploadWastePct:     cfg.UploadWastePct,
+		Directory:         cfg.Directory,
+		IndexerURL:        cfg.IndexerURL,
+		AvailableIndexers: cfg.AvailableIndexers,
+		HostBases:         cfg.HostBases,
+		DiskUsageLimit:    cfg.DiskUsageLimit,
+		UploadWastePct:    cfg.UploadWastePct,
 	})
 }
 
@@ -44,12 +44,12 @@ func (s *Services) setS3Config(c *echo.Context) error {
 	}
 
 	if err := s.store.SetS3Config(config.S3Config{
-		Directory:          req.Directory,
-		IndexerURL:         req.IndexerURL,
-		AvailableIndexers:  current.AvailableIndexers,
-		HostBases:          req.HostBases,
-		DiskUsageLimit:     req.DiskUsageLimit,
-		UploadWastePct:     req.UploadWastePct,
+		Directory:         req.Directory,
+		IndexerURL:        req.IndexerURL,
+		AvailableIndexers: current.AvailableIndexers,
+		HostBases:         req.HostBases,
+		DiskUsageLimit:    req.DiskUsageLimit,
+		UploadWastePct:    req.UploadWastePct,
 	}); err != nil {
 		return api.SendInternal(c, api.TypeS3ConfigSaveFailed, "failed to save S3 config", err)
 	}
@@ -214,9 +214,9 @@ func (s *Services) statusAPI(c *echo.Context) error {
 
 	keys := s.listAccessKeys()
 	resp := StatusResponse{
-		S3Status:  st.String(),
-		KeyCount:  len(keys),
-		Version:   s.version,
+		S3Status: st.String(),
+		KeyCount: len(keys),
+		Version:  s.version,
 	}
 	if s.initError != nil {
 		resp.InitError = s.initError()

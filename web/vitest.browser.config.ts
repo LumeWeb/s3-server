@@ -2,6 +2,7 @@ import { defineConfig } from 'vitest/config'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import { existsSync, readdirSync } from 'node:fs'
+import { playwright } from '@vitest/browser-playwright'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -29,9 +30,14 @@ function resolveLibsodiumMjs(): string {
 export default defineConfig({
   test: {
     name: 's3-server',
-    include: ['src/**/*.test.ts'],
-    setupFiles: ['./src/__tests__/setup.ts'],
-    environment: 'happy-dom',
+    include: ['browser/**/*.test.ts'],
+    setupFiles: ['./browser/setup.ts'],
+    browser: {
+      enabled: true,
+      instances: [
+        { browser: 'chromium', provider: playwright(), headless: true },
+      ],
+    },
     passWithNoTests: true,
   },
   resolve: {

@@ -1,4 +1,4 @@
-.PHONY: all web css generate build docker-build clean dev test test-web test-short lint vet fmt deps watch help
+.PHONY: all web css generate build docker-build clean dev test test-web test-short test-all test-browser bench cover lint vet fmt tsc deps watch help
 
 BINARY := /tmp/s3-server
 WEB_DIR := web
@@ -54,14 +54,37 @@ dev: css web generate build
 
 # --- Testing ---
 
+# Go tests with race detector
 test:
-	$(GO) test -count=1 -race ./...
+	TEST_SECRET_KEY=test-key-not-for-prod $(GO) test -count=1 -race ./...
 
-test-web:
-	cd $(WEB_DIR) && bun run test
+# Frontend tests (real Chromium via Playwright)
+test-web: test-browser
 
+# Go tests in short mode (skip integration)
 test-short:
 	$(GO) test -count=1 -short ./...
+
+# All tests: Go + browser
+test-all: test test-browser
+
+# Browser tests with real Chromium via Playwright
+test-browser:
+	cd $(WEB_DIR) && PATH="$$HOME/.local/bin:$$PATH" PLAYWRIGHT_BROWSERS_PATH=$$HOME/.cache/ms-playwright bunx vitest run --config vitest.browser.config.ts browser/
+
+# Go benchmarks with memory allocation stats
+bench:
+	$(GO) test -bench=. -benchmem ./...
+
+# Go test coverage (collect only, no gate)
+cover:
+	$(GO) test -count=1 -coverprofile=coverage.out ./...
+	$(GO) tool cover -func=coverage.out | tail -1
+	@echo "Coverage report: coverage.out (run 'go tool cover -html=coverage.out' to view)"
+
+# TypeScript type check
+tsc:
+	cd $(WEB_DIR) && bun x tsc --noEmit
 
 # --- Linting & formatting ---
 
@@ -88,18 +111,23 @@ clean:
 
 help:
 	@echo "s3-server build targets:"
-	@echo "  all       - Full build: web + css + generate + build"
-	@echo "  deps      - Install JS + Go dependencies"
-	@echo "  web       - Build Vite frontend bundle"
-	@echo "  css       - Build minified Tailwind CSS"
-	@echo "  generate  - Run go:generate + templ generate"
-	@echo "  build     - Build Go binary"
-	@echo "  dev       - Full build + run locally"
-	@echo "  watch     - Hot reload mode (requires air)"
-	@echo "  test       - Run Go tests with race detector"
-	@echo "  test-web   - Run frontend vitest tests (MSW + happy-dom)"
-	@echo "  test-short - Run Go tests (short mode, skip integration)"
-	@echo "  fmt       - Format Go + templ files"
-	@echo "  vet       - Run go vet"
-	@echo "  lint      - Run golangci-lint (if installed)"
-	@echo "  clean     - Remove binary, dist, generated files"
+	@echo "  all          - Full build: web + css + generate + build"
+	@echo "  deps         - Install JS + Go dependencies"
+	@echo "  web          - Build Vite frontend bundle"
+	@echo "  css          - Build minified Tailwind CSS"
+	@echo "  generate     - Run go:generate + templ generate"
+	@echo "  build        - Build Go binary"
+	@echo "  dev          - Full build + run locally"
+	@echo "  watch        - Hot reload mode (requires air)"
+	@echo "  test         - Run Go tests with race detector"
+	@echo "  test-web     - Run frontend tests (real Chromium via Playwright)"
+	@echo "  test-short   - Run Go tests (short mode, skip integration)"
+	@echo "  test-all     - Run Go + web unit tests"
+	@echo "  test-browser - Run browser tests with real Chromium (Playwright)"
+	@echo "  bench        - Run Go benchmarks with memory stats"
+	@echo "  cover        - Run Go tests with coverage report"
+	@echo "  tsc          - TypeScript type check"
+	@echo "  fmt          - Format Go + templ files"
+	@echo "  vet          - Run go vet"
+	@echo "  lint         - Run golangci-lint (if installed)"
+	@echo "  clean        - Remove binary, dist, generated files"

@@ -34,38 +34,38 @@ type ErrorType string
 
 const (
 	// Internal errors
-	TypeDatabaseOpenFailed    ErrorType = "DATABASE_OPEN_FAILED"
-	TypeDatabaseStoreFailed   ErrorType = "DATABASE_STORE_FAILED"
-	TypeSQLiteNotInitialized  ErrorType = "SQLITE_NOT_INITIALIZED"
-	TypeBackendNotInitialized ErrorType = "BACKEND_NOT_INITIALIZED"
-	TypeBackendInitFailed     ErrorType = "BACKEND_INIT_FAILED"
-	TypeS3ConfigSaveFailed    ErrorType = "S3_CONFIG_SAVE_FAILED"
-	TypeSSLConfigSaveFailed  ErrorType = "SSL_CONFIG_SAVE_FAILED"
-	TypeLogConfigSaveFailed   ErrorType = "LOG_CONFIG_SAVE_FAILED"
-	TypePasswordSetFailed     ErrorType = "PASSWORD_SET_FAILED"
-	TypeConflict              ErrorType = "CONFLICT"
-	TypeUserCreateFailed     ErrorType = "USER_CREATE_FAILED"
-	TypeUserDeleteFailed     ErrorType = "USER_DELETE_FAILED"
-	TypeAccessKeyCreateFailed ErrorType = "ACCESS_KEY_CREATE_FAILED"
-	TypeAccessKeyDeleteFailed ErrorType = "ACCESS_KEY_DELETE_FAILED"
-	TypeBackupCreateFailed   ErrorType = "BACKUP_CREATE_FAILED"
-	TypeBackupDeleteFailed   ErrorType = "BACKUP_DELETE_FAILED"
-	TypeBackupStatFailed     ErrorType = "BACKUP_STAT_FAILED"
-	TypeBackupOpenFailed     ErrorType = "BACKUP_OPEN_FAILED"
-	TypeLifecyclePutFailed   ErrorType = "LIFECYCLE_PUT_FAILED"
-	TypeLifecycleDeleteFailed ErrorType = "LIFECYCLE_DELETE_FAILED"
-	TypeBackupListFailed     ErrorType = "BACKUP_LIST_FAILED"
-	TypeBucketListFailed     ErrorType = "BUCKET_LIST_FAILED"
-	TypeBucketCreateFailed  ErrorType = "BUCKET_CREATE_FAILED"
-	TypeBucketDeleteFailed  ErrorType = "BUCKET_DELETE_FAILED"
-	TypeFlushFailed          ErrorType = "FLUSH_FAILED"
-	TypeUserListFailed       ErrorType = "USER_LIST_FAILED"
-	TypeAccessKeyListFailed  ErrorType = "ACCESS_KEY_LIST_FAILED"
-	TypeMonitoringStatsFailed ErrorType = "MONITORING_STATS_FAILED"
+	TypeDatabaseOpenFailed     ErrorType = "DATABASE_OPEN_FAILED"
+	TypeDatabaseStoreFailed    ErrorType = "DATABASE_STORE_FAILED"
+	TypeSQLiteNotInitialized   ErrorType = "SQLITE_NOT_INITIALIZED"
+	TypeBackendNotInitialized  ErrorType = "BACKEND_NOT_INITIALIZED"
+	TypeBackendInitFailed      ErrorType = "BACKEND_INIT_FAILED"
+	TypeS3ConfigSaveFailed     ErrorType = "S3_CONFIG_SAVE_FAILED"
+	TypeSSLConfigSaveFailed    ErrorType = "SSL_CONFIG_SAVE_FAILED"
+	TypeLogConfigSaveFailed    ErrorType = "LOG_CONFIG_SAVE_FAILED"
+	TypePasswordSetFailed      ErrorType = "PASSWORD_SET_FAILED"
+	TypeConflict               ErrorType = "CONFLICT"
+	TypeUserCreateFailed       ErrorType = "USER_CREATE_FAILED"
+	TypeUserDeleteFailed       ErrorType = "USER_DELETE_FAILED"
+	TypeAccessKeyCreateFailed  ErrorType = "ACCESS_KEY_CREATE_FAILED"
+	TypeAccessKeyDeleteFailed  ErrorType = "ACCESS_KEY_DELETE_FAILED"
+	TypeBackupCreateFailed     ErrorType = "BACKUP_CREATE_FAILED"
+	TypeBackupDeleteFailed     ErrorType = "BACKUP_DELETE_FAILED"
+	TypeBackupStatFailed       ErrorType = "BACKUP_STAT_FAILED"
+	TypeBackupOpenFailed       ErrorType = "BACKUP_OPEN_FAILED"
+	TypeLifecyclePutFailed     ErrorType = "LIFECYCLE_PUT_FAILED"
+	TypeLifecycleDeleteFailed  ErrorType = "LIFECYCLE_DELETE_FAILED"
+	TypeBackupListFailed       ErrorType = "BACKUP_LIST_FAILED"
+	TypeBucketListFailed       ErrorType = "BUCKET_LIST_FAILED"
+	TypeBucketCreateFailed     ErrorType = "BUCKET_CREATE_FAILED"
+	TypeBucketDeleteFailed     ErrorType = "BUCKET_DELETE_FAILED"
+	TypeFlushFailed            ErrorType = "FLUSH_FAILED"
+	TypeUserListFailed         ErrorType = "USER_LIST_FAILED"
+	TypeAccessKeyListFailed    ErrorType = "ACCESS_KEY_LIST_FAILED"
+	TypeMonitoringStatsFailed  ErrorType = "MONITORING_STATS_FAILED"
 	TypeSSEBrokerNotConfigured ErrorType = "SSE_BROKER_NOT_CONFIGURED"
-	TypeInvalidRequestURL    ErrorType = "INVALID_REQUEST_URL"
-	TypeBackupDirCreateFailed ErrorType = "BACKUP_DIR_CREATE_FAILED"
-	TypeBackupPathCheckFailed ErrorType = "BACKUP_PATH_CHECK_FAILED"
+	TypeInvalidRequestURL      ErrorType = "INVALID_REQUEST_URL"
+	TypeBackupDirCreateFailed  ErrorType = "BACKUP_DIR_CREATE_FAILED"
+	TypeBackupPathCheckFailed  ErrorType = "BACKUP_PATH_CHECK_FAILED"
 
 	// Validation / bad request
 	TypeInvalidRequestBody    ErrorType = "INVALID_REQUEST_BODY"
@@ -79,7 +79,7 @@ const (
 	TypeInvalidFilename       ErrorType = "INVALID_FILENAME"
 	TypeDirectoryRequired     ErrorType = "DIRECTORY_REQUIRED"
 	TypeIndexerURLRequired    ErrorType = "INDEXER_URL_REQUIRED"
-	TypeIndexerLocked        ErrorType = "INDEXER_LOCKED"
+	TypeIndexerLocked         ErrorType = "INDEXER_LOCKED"
 	TypeSSLModeInvalid        ErrorType = "SSL_MODE_INVALID"
 	TypeACMEEmailRequired     ErrorType = "ACME_EMAIL_REQUIRED"
 	TypeBackupNotFound        ErrorType = "BACKUP_NOT_FOUND"
@@ -90,37 +90,37 @@ const (
 	TypeAtLeastOneKeyRequired ErrorType = "AT_LEAST_ONE_KEY_REQUIRED"
 
 	// Onboarding flow
-	TypeOnboardingComplete    ErrorType = "ONBOARDING_COMPLETE"
-	TypeOnboardingRequired    ErrorType = "ONBOARDING_REQUIRED"
-	TypeOnboardingResetFailed  ErrorType = "ONBOARDING_RESET_FAILED"
-	TypeOnboardingStateFailed  ErrorType = "ONBOARDING_STATE_FAILED"
-	TypeAdminPasswordRequired ErrorType = "ADMIN_PASSWORD_REQUIRED"
-	TypeAppKeyRequired         ErrorType = "APP_KEY_REQUIRED"
-	TypeInvalidBase64          ErrorType = "INVALID_BASE64"
-	TypeDecryptionFailed       ErrorType = "DECRYPTION_FAILED_ERROR"
-	TypeAppKeySizeInvalid      ErrorType = "APP_KEY_SIZE_INVALID"
+	TypeOnboardingComplete         ErrorType = "ONBOARDING_COMPLETE"
+	TypeOnboardingRequired         ErrorType = "ONBOARDING_REQUIRED"
+	TypeOnboardingResetFailed      ErrorType = "ONBOARDING_RESET_FAILED"
+	TypeOnboardingStateFailed      ErrorType = "ONBOARDING_STATE_FAILED"
+	TypeAdminPasswordRequired      ErrorType = "ADMIN_PASSWORD_REQUIRED"
+	TypeAppKeyRequired             ErrorType = "APP_KEY_REQUIRED"
+	TypeInvalidBase64              ErrorType = "INVALID_BASE64"
+	TypeDecryptionFailed           ErrorType = "DECRYPTION_FAILED_ERROR"
+	TypeAppKeySizeInvalid          ErrorType = "APP_KEY_SIZE_INVALID"
 	TypeDataDirectoryNotConfigured ErrorType = "DATA_DIRECTORY_NOT_CONFIGURED"
 	TypeAdminHandlerNotConfigured  ErrorType = "ADMIN_HANDLER_NOT_CONFIGURED"
 
 	// Auth
-	TypeAuthRequired          ErrorType = "AUTH_REQUIRED"
-	TypePasswordRequired      ErrorType = "PASSWORD_REQUIRED"
-	TypePasswordIncorrect     ErrorType = "PASSWORD_INCORRECT"
-	TypeInvalidRequest        ErrorType = "INVALID_REQUEST"
-	TypeResetTokenNotFound    ErrorType = "RESET_TOKEN_NOT_FOUND"
-	TypeResetTokenExpired     ErrorType = "RESET_TOKEN_EXPIRED"
+	TypeAuthRequired       ErrorType = "AUTH_REQUIRED"
+	TypePasswordRequired   ErrorType = "PASSWORD_REQUIRED"
+	TypePasswordIncorrect  ErrorType = "PASSWORD_INCORRECT"
+	TypeInvalidRequest     ErrorType = "INVALID_REQUEST"
+	TypeResetTokenNotFound ErrorType = "RESET_TOKEN_NOT_FOUND"
+	TypeResetTokenExpired  ErrorType = "RESET_TOKEN_EXPIRED"
 
 	// Update / sidecar
-	TypeUpdateNotAvailable ErrorType = "UPDATE_NOT_AVAILABLE"
-	TypeUpdateToggleFailed ErrorType = "UPDATE_TOGGLE_FAILED"
+	TypeUpdateNotAvailable  ErrorType = "UPDATE_NOT_AVAILABLE"
+	TypeUpdateToggleFailed  ErrorType = "UPDATE_TOGGLE_FAILED"
 	TypeUpdateTriggerFailed ErrorType = "UPDATE_TRIGGER_FAILED"
 )
 
 type Error struct {
-	Code    ErrorCode  `json:"code"`
-	Type    ErrorType  `json:"type,omitempty"`
-	Message string     `json:"message"`
-	Err     error      `json:"-"`
+	Code    ErrorCode `json:"code"`
+	Type    ErrorType `json:"type,omitempty"`
+	Message string    `json:"message"`
+	Err     error     `json:"-"`
 }
 
 func (e *Error) Error() string {

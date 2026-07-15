@@ -1,8 +1,7 @@
 // Alpine component: keys page
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 import { api, apiAction, reloadAfter } from '../globals'
 
-export function keysApp(this: any, props: { backendRunning: boolean } = { backendRunning: false }) {
+export function keysApp(this: AlpineMagic, props: { backendRunning: boolean } = { backendRunning: false }) {
   return {
     showDelete: false,
     deleteAccessKey: '',

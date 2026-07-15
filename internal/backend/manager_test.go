@@ -8,12 +8,12 @@ import (
 	"testing"
 
 	"github.com/SiaFoundation/s3d/s3"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/s3-server/internal/config"
 	"go.lumeweb.com/s3-server/internal/status"
 	"go.lumeweb.com/s3-server/internal/testutil"
 	"go.sia.tech/core/types"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 const testUser = "test-user"
@@ -37,12 +37,12 @@ func (f *stubFactory) Init(ctx context.Context, s3Cfg config.S3Config, sqliteSto
 
 // stubS3DStore implements S3DStore for testing.
 type stubS3DStore struct {
-	mu          sync.Mutex
-	closeErr    error
-	accessKeys  []AccessKeyInfo
-	appKeySet   bool
-	indexerURL  string
-	privateKey  types.PrivateKey
+	mu         sync.Mutex
+	closeErr   error
+	accessKeys []AccessKeyInfo
+	appKeySet  bool
+	indexerURL string
+	privateKey types.PrivateKey
 }
 
 func (s *stubS3DStore) AppKey() (types.PrivateKey, string, error) {
@@ -56,9 +56,9 @@ func (s *stubS3DStore) SetAppKey(key types.PrivateKey, indexerURL string) error 
 	s.appKeySet = true
 	return nil
 }
-func (s *stubS3DStore) CreateUser(name string) error   { return nil }
-func (s *stubS3DStore) DeleteUser(name string) error   { return nil }
-func (s *stubS3DStore) ListUsers() ([]string, error)   { return nil, nil }
+func (s *stubS3DStore) CreateUser(name string) error { return nil }
+func (s *stubS3DStore) DeleteUser(name string) error { return nil }
+func (s *stubS3DStore) ListUsers() ([]string, error) { return nil, nil }
 func (s *stubS3DStore) CreateAccessKey(userName, accessKeyID, secretKey string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -110,7 +110,7 @@ func (b *stubBackend) BucketCountForUser(ctx context.Context, userName string) (
 }
 func (b *stubBackend) CreateBucket(ctx context.Context, accessKeyID, name string) error { return nil }
 func (b *stubBackend) DeleteBucket(ctx context.Context, accessKeyID, name string) error { return nil }
-func (b *stubBackend) FlushObjects(ctx context.Context) error { return nil }
+func (b *stubBackend) FlushObjects(ctx context.Context) error                           { return nil }
 func (b *stubBackend) PutBucketVersioning(ctx context.Context, accessKeyID, bucket, status string) error {
 	return nil
 }
@@ -123,7 +123,9 @@ func (b *stubBackend) PutBucketLifecycleConfiguration(ctx context.Context, acces
 func (b *stubBackend) GetBucketLifecycleConfiguration(ctx context.Context, accessKeyID, bucket string) (s3.LifecycleConfiguration, error) {
 	return s3.LifecycleConfiguration{}, nil
 }
-func (b *stubBackend) DeleteBucketLifecycleConfiguration(ctx context.Context, accessKeyID, bucket string) error { return nil }
+func (b *stubBackend) DeleteBucketLifecycleConfiguration(ctx context.Context, accessKeyID, bucket string) error {
+	return nil
+}
 func (b *stubBackend) BackupSQLite3(ctx context.Context, destPath string) error { return nil }
 func (b *stubBackend) Close() error {
 	b.closed = true
@@ -148,26 +150,28 @@ type stubStore struct {
 	s3Cfg config.S3Config
 }
 
-func (s *stubStore) Config() config.PanelConfig                   { return s.cfg }
-func (s *stubStore) DataDir() string                              { return "" }
-func (s *stubStore) ResetTokenPath() string                       { return "" }
-func (s *stubStore) S3Config() config.S3Config                    { return s.s3Cfg }
-func (s *stubStore) SetAdminPassword(string) error                { return nil }
-func (s *stubStore) ClearAdminPassword() error                   { return nil }
-func (s *stubStore) ValidateAdminPassword(string) bool            { return false }
-func (s *stubStore) OnboardingState() string                      { return "" }
-func (s *stubStore) SetOnboardingState(string) error              { return nil }
-func (s *stubStore) SSLConfig() config.SSLConfig                  { return config.SSLConfig{} }
-func (s *stubStore) SetSSLConfig(config.SSLConfig) error          { return nil }
-func (s *stubStore) SetS3Config(config.S3Config) error            { return nil }
-func (s *stubStore) LogConfig() config.LogConfig                  { return config.LogConfig{Level: "info", Format: "json"} }
-func (s *stubStore) SetLogConfig(config.LogConfig) error          { return nil }
-func (s *stubStore) CreateSession() (string, error)               { return "stub-session", nil }
-func (s *stubStore) ValidateSession(string) bool                  { return true }
-func (s *stubStore) DeleteSession(string)                         {}
-func (s *stubStore) StartSessionCleanup(<-chan struct{})          {}
-func (s *stubStore) AccessKeys() []config.KeyPair                 { return nil }
-func (s *stubStore) SetAccessKeys(keys []config.KeyPair) error   { return nil }
+func (s *stubStore) Config() config.PanelConfig          { return s.cfg }
+func (s *stubStore) DataDir() string                     { return "" }
+func (s *stubStore) ResetTokenPath() string              { return "" }
+func (s *stubStore) S3Config() config.S3Config           { return s.s3Cfg }
+func (s *stubStore) SetAdminPassword(string) error       { return nil }
+func (s *stubStore) ClearAdminPassword() error           { return nil }
+func (s *stubStore) ValidateAdminPassword(string) bool   { return false }
+func (s *stubStore) OnboardingState() string             { return "" }
+func (s *stubStore) SetOnboardingState(string) error     { return nil }
+func (s *stubStore) SSLConfig() config.SSLConfig         { return config.SSLConfig{} }
+func (s *stubStore) SetSSLConfig(config.SSLConfig) error { return nil }
+func (s *stubStore) SetS3Config(config.S3Config) error   { return nil }
+func (s *stubStore) LogConfig() config.LogConfig {
+	return config.LogConfig{Level: "info", Format: "json"}
+}
+func (s *stubStore) SetLogConfig(config.LogConfig) error       { return nil }
+func (s *stubStore) CreateSession() (string, error)            { return "stub-session", nil }
+func (s *stubStore) ValidateSession(string) bool               { return true }
+func (s *stubStore) DeleteSession(string)                      {}
+func (s *stubStore) StartSessionCleanup(<-chan struct{})       {}
+func (s *stubStore) AccessKeys() []config.KeyPair              { return nil }
+func (s *stubStore) SetAccessKeys(keys []config.KeyPair) error { return nil }
 
 func newTestManager(t *testing.T) (*Manager, *stubStore, *stubFactory, *stubS3Swapper) {
 	st := &stubStore{}

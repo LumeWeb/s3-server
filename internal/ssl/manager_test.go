@@ -4,10 +4,10 @@ import (
 	"net/http"
 	"testing"
 
-	"go.lumeweb.com/s3-server/internal/config"
-	"go.lumeweb.com/s3-server/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.lumeweb.com/s3-server/internal/config"
+	"go.lumeweb.com/s3-server/internal/testutil"
 )
 
 func TestNewManager_NoneMode(t *testing.T) {

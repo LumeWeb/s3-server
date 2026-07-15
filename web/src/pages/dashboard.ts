@@ -2,8 +2,7 @@
 import { S3Status } from './status'
 import { api, apiReady, apiAction, reloadAfter } from '../globals'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function dashboardApp(this: any) {
+export function dashboardApp(this: AlpineMagic) {
   return {
     s3Status: S3Status.Stopped,
     initError: '',

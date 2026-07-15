@@ -15,7 +15,7 @@ export interface ApiClient {
 export interface SiaSdk {
   Builder: any
   generateRecoveryPhrase: () => string
-  validateRecoveryPhrase: (phrase: string) => boolean
+  validateRecoveryPhrase: (phrase: string) => void
   AppKey: any
 }
 

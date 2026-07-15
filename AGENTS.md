@@ -5,21 +5,25 @@ Guidance for AI coding agents working in this repository.
 ## Build Commands
 
 ```bash
-make all         # Full build: deps → web → css → generate → build
-make deps        # Install JS (bun) + Go dependencies
-make web         # Vite frontend bundle → internal/views/web/dist/
-make css         # Tailwind CSS → internal/views/css/tailwind.css
-make generate    # go:generate + templ generate
-make build       # Compile Go binary
-make test        # Go tests with -race
-make test-web    # Vitest (frontend)
-make test-short  # Go tests in -short mode
-make vet         # go vet
-make fmt         # go fmt + templ fmt
-make lint        # golangci-lint (if installed)
-make clean       # Remove binary, dist, generated files
-make dev         # Full build + run locally
-make watch       # Hot reload (requires air)
+make all          # Full build: deps → web → css → generate → build
+make deps         # Install JS (bun) + Go dependencies
+make web          # Vite frontend bundle → internal/views/web/dist/
+make css          # Tailwind CSS → internal/views/css/tailwind.css
+make generate     # go:generate + templ generate
+make build        # Compile Go binary
+make test         # Go tests with -race
+make test-browser # Vitest browser tests (real Chromium via Playwright)
+make test-all     # Go + browser tests combined
+make test-short   # Go tests in -short mode
+make bench        # Go benchmarks with memory allocation stats
+make cover        # Go test coverage report
+make tsc          # TypeScript type check (zero errors required)
+make vet          # go vet
+make fmt          # go fmt + templ fmt
+make lint         # golangci-lint (if installed)
+make clean        # Remove binary, dist, generated files
+make dev          # Full build + run locally
+make watch        # Hot reload (requires air)
 ```
 
 ## Before Pushing
@@ -91,7 +95,7 @@ These are gitignored and rebuilt by `make generate` / `make web` / `make css`:
 ## Testing
 
 - Go tests use `testify` (assert/require). Race detector is on (`-race`).
-- Frontend tests use Vitest + happy-dom + MSW for API mocking.
+- Frontend tests use Vitest browser mode with real Chromium (Playwright). No happy-dom or MSW.
 - Mocks live in `internal/*/mocks/` directories.
 - Flaky tests: fix root cause, never skip.
 

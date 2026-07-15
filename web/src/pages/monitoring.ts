@@ -1,8 +1,8 @@
 // Alpine component: monitoring stats + account info
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 import { apiReady } from '../globals'
+import { fmtBytes, accountPct } from '../utils'
 
-export function monitoringApp(this: any) {
+export function monitoringApp(this: AlpineMagic) {
   return {
     pending_objects: 0,
     pending_size: '0 B',
@@ -62,13 +62,12 @@ export function monitoringApp(this: any) {
       // First render happens on the next SSE stats push (within 5s).
     },
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     applyStats(data: any) {
       this.pending_objects = data.pending_objects ?? 0
-      this.pending_size = this.fmtBytes(data.pending_size ?? 0)
+      this.pending_size = fmtBytes(data.pending_size ?? 0)
       this.pending_size_bytes = data.pending_size ?? 0
       this.uploaded_objects = data.uploaded_objects ?? 0
-      this.uploaded_size = this.fmtBytes(data.uploaded_size ?? 0)
+      this.uploaded_size = fmtBytes(data.uploaded_size ?? 0)
       this.failed_uploads = data.failed_uploads ?? 0
       this.orphaned_objects = data.orphaned_objects ?? 0
       this.multipart_uploads = data.multipart_uploads ?? 0
@@ -82,22 +81,17 @@ export function monitoringApp(this: any) {
     },
 
     fmtBytes(bytes: number) {
-      if (!bytes || bytes === 0) return '0 B'
-      const k = 1000
-      const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB']
-      const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1)
-      return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`
+      return fmtBytes(bytes)
     },
 
     // Alias used by the account section in templ (name must match the
     // x-text / :class expressions in monitoring.templ).
     fmtAccountBytes(bytes: number) {
-      return this.fmtBytes(bytes)
+      return fmtBytes(bytes)
     },
 
     accountPct() {
-      if (!this.account_max_pinned_data) return 0
-      return (this.account_pinned_size / this.account_max_pinned_data) * 100
+      return accountPct(this.account_pinned_size, this.account_max_pinned_data)
     },
   }
 }

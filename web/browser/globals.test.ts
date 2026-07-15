@@ -31,7 +31,7 @@ describe('globals accessors', () => {
       window.__api = mockApi
 
       // Dynamically import globals to get fresh references
-      const { api } = await import('../globals')
+      const { api } = await import('../src/globals')
       const result = await api()!.get('/test')
       expect(result).toEqual({ status: 'ok' })
       expect(mockApi.get).toHaveBeenCalledWith('/test')
@@ -40,14 +40,14 @@ describe('globals accessors', () => {
 
   describe('apiReady()', () => {
     it('returns the __apiReady promise', async () => {
-      const { apiReady } = await import('../globals')
+      const { apiReady } = await import('../src/globals')
       await expect(apiReady()).resolves.toBeUndefined()
     })
   })
 
   describe('toast()', () => {
     it('calls __sseToast on window', async () => {
-      const { toast } = await import('../globals')
+      const { toast } = await import('../src/globals')
       toast('test message', 'success')
       expect(window.__sseToast).toHaveBeenCalledWith('test message', 'success')
     })
@@ -55,14 +55,14 @@ describe('globals accessors', () => {
 
   describe('siaReady()', () => {
     it('returns the __siaReady promise', async () => {
-      const { siaReady } = await import('../globals')
+      const { siaReady } = await import('../src/globals')
       await expect(siaReady()).resolves.toBeUndefined()
     })
   })
 
   describe('siaSdk()', () => {
     it('returns the __siaSdk object from window', async () => {
-      const { siaSdk } = await import('../globals')
+      const { siaSdk } = await import('../src/globals')
       const sdk = siaSdk()
       expect(sdk).toBe(window.__siaSdk)
       expect(sdk.generateRecoveryPhrase).toBeDefined()
@@ -71,7 +71,7 @@ describe('globals accessors', () => {
 
   describe('apiAction()', () => {
     it('calls __sseAction with processing message, fn, and success message', async () => {
-      const { apiAction } = await import('../globals')
+      const { apiAction } = await import('../src/globals')
       const fn = async () => 'result'
       apiAction('Processing…', fn, 'Done')
       expect(window.__sseAction).toHaveBeenCalledWith('Processing…', fn, 'Done')

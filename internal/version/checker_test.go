@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"go.lumeweb.com/s3-server/internal/testutil"
 	"github.com/stretchr/testify/assert"
+	"go.lumeweb.com/s3-server/internal/testutil"
 )
 
 func TestNewChecker(t *testing.T) {
@@ -45,10 +45,10 @@ func TestCheckOnce_SemverComparison(t *testing.T) {
 func TestCheckResult_JSON(t *testing.T) {
 	r := CheckResult{
 		CurrentVersion:  "0.2.0",
-		LatestVersion:  "0.3.0",
+		LatestVersion:   "0.3.0",
 		UpdateAvailable: true,
-		UpdateType:     "minor",
-		ImageName:      "test/image",
+		UpdateType:      "minor",
+		ImageName:       "test/image",
 		CheckedAt:       "2026-01-01T00:00:00Z",
 	}
 

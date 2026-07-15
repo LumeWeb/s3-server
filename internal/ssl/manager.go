@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"go.lumeweb.com/s3-server/internal/config"
 	"github.com/caddyserver/certmagic"
+	"go.lumeweb.com/s3-server/internal/config"
 	"go.uber.org/zap"
 )
 

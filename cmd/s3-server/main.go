@@ -1,7 +1,6 @@
 package main
 
 import (
-	"strings"
 	"context"
 	"errors"
 	"fmt"
@@ -9,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -231,10 +231,10 @@ func runServe(c *cli.Context) error {
 
 	// request logging middleware — logs method, path, status, duration
 	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
-		LogStatus:    true,
-		LogMethod:    true,
-		LogURI:       true,
-		HandleError:  true,
+		LogStatus:   true,
+		LogMethod:   true,
+		LogURI:      true,
+		HandleError: true,
 		LogValuesFunc: func(c *echo.Context, v middleware.RequestLoggerValues) error {
 			duration := time.Since(v.StartTime)
 			fields := []zap.Field{
@@ -283,31 +283,26 @@ func runServe(c *cli.Context) error {
 		return views.ResetPassword(csrfToken(c), enabled, dataDir).Render(c.Request().Context(), c.Response())
 	})
 
-	// password reset API (pre-auth — deletes .reset-token on success)
-	e.POST(routes.PanelPasswordReset, func(c *echo.Context) error {
-		var req struct {
-			NewPassword string `json:"new_password"`
+	// password reset handler (pre-auth — form POST, deletes .reset-token on success)
+	e.POST(routes.PanelResetPassword, func(c *echo.Context) error {
+		newPassword := c.FormValue("new_password")
+		if newPassword == "" {
+			return c.String(http.StatusBadRequest, "new password is required")
 		}
-		if err := c.Bind(&req); err != nil {
-			return api.SendBadRequest(c, api.TypeInvalidRequest, "invalid request body")
-		}
-		if req.NewPassword == "" {
-			return api.SendValidation(c, api.TypePasswordRequired, "new password is required")
-		}
-		if len(req.NewPassword) < 8 {
-			return api.SendValidation(c, api.TypePasswordTooShort, "password must be at least 8 characters")
+		if len(newPassword) < 8 {
+			return c.String(http.StatusBadRequest, "password must be at least 8 characters")
 		}
 		resetPath := stor.ResetTokenPath()
 		if _, err := os.Stat(resetPath); err != nil {
-			return api.SendNotFound(c, api.TypeResetTokenNotFound, "password reset is not enabled. Create a .reset-token file in the data directory.")
+			return c.String(http.StatusUnauthorized, "password reset is not enabled")
 		}
-		if err := stor.SetAdminPassword(req.NewPassword); err != nil {
-			return api.SendInternal(c, api.TypeS3ConfigSaveFailed, "failed to set admin password", err)
+		if err := stor.SetAdminPassword(newPassword); err != nil {
+			return c.String(http.StatusInternalServerError, "failed to set admin password")
 		}
 		if err := os.Remove(resetPath); err != nil {
 			log.Warn("failed to remove reset token file", zap.Error(err))
 		}
-		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
+		return c.Redirect(http.StatusFound, routes.PanelLogin)
 	})
 
 	// onboarding page (no auth required — admin password not set yet)
@@ -369,21 +364,21 @@ func runServe(c *cli.Context) error {
 	sseBroker.SetStatsFetcher(&sse.AdminStatsFetcher{AdminHandler: adminHdlr, AccountClient: be.AccountClient})
 
 	svc := handlers.NewServices(handlers.ServicesConfig{
-		Store:         stor,
-		KeyStore:      be.KeyStore,
-		Backend:       be.Backend,
-		AccountClient: be.AccountClient,
-		AdminHandler:  adminHdlr,
-		Restarter:     be,
-		BackendStatus: be.Status,
-		InitError:     be.InitError,
-		Version:       appVersion,
-		PlatformName:  config.ResolvePlatformName(cfg.PlatformID),
-		Log:           log,
+		Store:           stor,
+		KeyStore:        be.KeyStore,
+		Backend:         be.Backend,
+		AccountClient:   be.AccountClient,
+		AdminHandler:    adminHdlr,
+		Restarter:       be,
+		BackendStatus:   be.Status,
+		InitError:       be.InitError,
+		Version:         appVersion,
+		PlatformName:    config.ResolvePlatformName(cfg.PlatformID),
+		Log:             log,
 		LogLevelUpdater: logLevelUpdater,
-		CSRFToken:     csrfToken,
-		SSEBroker:     sseBroker,
-		UpdateManager: updater.New(),
+		CSRFToken:       csrfToken,
+		SSEBroker:       sseBroker,
+		UpdateManager:   updater.New(),
 	})
 	handlers.RegisterRoutes(panel, svc)
 

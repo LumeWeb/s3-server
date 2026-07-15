@@ -42,10 +42,23 @@ jobs:
         run: make vet
 
       - name: Test
+        env:
+          TEST_SECRET_KEY: test-key-not-for-prod
         run: make test
 
-  frontend:
-    name: Frontend (Bun)
+      - name: Coverage
+        run: make cover
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-coverage
+          path: coverage.out
+          retention-days: 30
+
+  browser:
+    name: Browser Tests (Playwright)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -61,8 +74,45 @@ jobs:
       - name: Build CSS
         run: make css
 
-      - name: Test
-        run: make test-web
+      - name: Type check
+        run: make tsc
+
+      - name: Install Playwright Chromium
+        run: bunx playwright install --with-deps chromium
+
+      - name: Run browser tests
+        run: make test-browser
+
+  bench:
+    name: Benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26'
+          cache: true
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install JS deps
+        run: bun install
+
+      - name: Build CSS
+        run: make css
+
+      - name: Build frontend
+        run: make web
+
+      - name: Install templ
+        run: go install github.com/a-h/templ/cmd/templ@latest
+
+      - name: Generate
+        run: make generate
+
+      - name: Run benchmarks
+        run: make bench
 
   lint:
     name: Lint (golangci-lint + templ fmt)
@@ -122,7 +172,7 @@ jobs:
     name: Publish to GHCR
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
-    needs: [backend, frontend, lint, docker]
+    needs: [backend, browser, bench, lint, docker]
     permissions:
       contents: read
       packages: write

@@ -9,12 +9,12 @@ import (
 	"testing"
 	"time"
 
-	"go.sia.tech/core/types"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/s3-server/internal/backend"
 	storeMocks "go.lumeweb.com/s3-server/internal/store/mocks"
 	"go.lumeweb.com/s3-server/internal/testutil"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"go.sia.tech/core/types"
 )
 
 // safeRecorder wraps httptest.ResponseRecorder with a mutex so that
@@ -51,16 +51,14 @@ func (s *stubKeyStore) ListAccessKeys(userName *string) ([]backend.AccessKeyInfo
 	return s.keys, nil
 }
 
-func (s *stubKeyStore) AppKey() (types.PrivateKey, string, error)         { return types.PrivateKey{}, "", nil }
-func (s *stubKeyStore) SetAppKey(types.PrivateKey, string) error           { return nil }
-func (s *stubKeyStore) CreateUser(string) error                            { return nil }
-func (s *stubKeyStore) DeleteUser(string) error                            { return nil }
-func (s *stubKeyStore) ListUsers() ([]string, error)                       { return nil, nil }
-func (s *stubKeyStore) CreateAccessKey(string, string, string) error       { return nil }
-func (s *stubKeyStore) DeleteAccessKey(string) error                       { return nil }
-func (s *stubKeyStore) Close() error                                       { return nil }
-
-
+func (s *stubKeyStore) AppKey() (types.PrivateKey, string, error)    { return types.PrivateKey{}, "", nil }
+func (s *stubKeyStore) SetAppKey(types.PrivateKey, string) error     { return nil }
+func (s *stubKeyStore) CreateUser(string) error                      { return nil }
+func (s *stubKeyStore) DeleteUser(string) error                      { return nil }
+func (s *stubKeyStore) ListUsers() ([]string, error)                 { return nil, nil }
+func (s *stubKeyStore) CreateAccessKey(string, string, string) error { return nil }
+func (s *stubKeyStore) DeleteAccessKey(string) error                 { return nil }
+func (s *stubKeyStore) Close() error                                 { return nil }
 
 func newTestBroker(t *testing.T) (*Broker, *storeMocks.MockStore) {
 	mockStore := storeMocks.NewMockStore(t)
@@ -74,9 +72,9 @@ func TestBroker_PublishDashboard(t *testing.T) {
 
 	evt := DashboardEvent{
 		S3Status: "running",
-		KeyCount:  2,
-		Version:   "0.2.0",
-		Uptime:    "10s",
+		KeyCount: 2,
+		Version:  "0.2.0",
+		Uptime:   "10s",
 	}
 	err := b.PublishDashboard(evt)
 	require.NoError(t, err)
@@ -102,8 +100,8 @@ func TestBroker_ServeHTTP(t *testing.T) {
 	// publish an event
 	err := b.PublishDashboard(DashboardEvent{
 		S3Status: "running",
-		KeyCount:  1,
-		Version:   "0.2.0",
+		KeyCount: 1,
+		Version:  "0.2.0",
 	})
 	require.NoError(t, err)
 
@@ -156,8 +154,8 @@ func TestBroker_SSEWireFormat(t *testing.T) {
 
 	b.PublishDashboard(DashboardEvent{ //nolint:errcheck
 		S3Status: "stopped",
-		KeyCount:  0,
-		Version:   "0.2.0",
+		KeyCount: 0,
+		Version:  "0.2.0",
 	})
 
 	time.Sleep(100 * time.Millisecond)
@@ -231,9 +229,9 @@ func TestBroker_DropOldestBuffer(t *testing.T) {
 func TestDashboardEventJSON(t *testing.T) {
 	evt := DashboardEvent{
 		S3Status: "running",
-		KeyCount:  2,
-		Version:   "0.2.0",
-		Uptime:    "1h30m0s",
+		KeyCount: 2,
+		Version:  "0.2.0",
+		Uptime:   "1h30m0s",
 	}
 
 	data, err := json.Marshal(evt)

@@ -1,8 +1,7 @@
 // Alpine component: users page
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 import { api, apiAction, reloadAfter } from '../globals'
 
-export function usersApp(this: any) {
+export function usersApp(this: AlpineMagic) {
   return {
     showCreate: false,
     createName: '',

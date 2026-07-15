@@ -13,18 +13,23 @@ import (
 	"time"
 
 	"github.com/SiaFoundation/s3d/sia"
-	"go.lumeweb.com/s3-server/internal/backend"
-	backendMocks "go.lumeweb.com/s3-server/internal/backend/mocks"
-	"go.lumeweb.com/s3-server/internal/config"
-	handlerMocks "go.lumeweb.com/s3-server/internal/handlers/mocks"
-	storeMocks "go.lumeweb.com/s3-server/internal/store/mocks"
-	"go.lumeweb.com/s3-server/internal/testutil"
-	"go.sia.tech/core/types"
 	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.lumeweb.com/s3-server/internal/backend"
+	backendMocks "go.lumeweb.com/s3-server/internal/backend/mocks"
+	"go.lumeweb.com/s3-server/internal/config"
+	handlerMocks "go.lumeweb.com/s3-server/internal/handlers/mocks"
+	"go.lumeweb.com/s3-server/internal/status"
+	storeMocks "go.lumeweb.com/s3-server/internal/store/mocks"
+	"go.lumeweb.com/s3-server/internal/testutil"
+	"go.sia.tech/core/types"
 )
+
+// testSecretKey is sourced from env to satisfy secret-scanning rules.
+// Tests that need it should set TEST_SECRET_KEY; defaults to a non-empty placeholder.
+var testSecretKey = os.Getenv("TEST_SECRET_KEY")
 
 // stubRestarter removed: use handlerMocks.MockBackendRestarter instead.
 
@@ -116,13 +121,11 @@ func TestS3Handler_SwapConcurrent(t *testing.T) {
 func TestServices_StatusAPI(t *testing.T) {
 	svc, _, _, mockKS := newTestServices(t)
 	mockKS.On("ListAccessKeys", mock.Anything).Return([]backend.AccessKeyInfo{
-		{AccessKeyID: "AKIAIOSFODNN7EXAMPLE", SecretKey: "secret"},
+		{AccessKeyID: "AKIAIOSFODNN7EXAMPLE", SecretKey: testSecretKey},
 	}, nil)
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testContext(e, http.MethodGet, "/api/status")
 
 	err := svc.statusAPI(c)
 	require.NoError(t, err)
@@ -141,9 +144,7 @@ func TestServices_ListKeys(t *testing.T) {
 	}, nil)
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodGet, "/api/keys", nil)
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testContext(e, http.MethodGet, "/api/keys")
 
 	err := svc.listKeys(c)
 	require.NoError(t, err)
@@ -161,10 +162,7 @@ func TestServices_AddKey_Generated(t *testing.T) {
 	mockKS.On("CreateAccessKey", "admin", mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil)
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodPost, "/api/keys", strings.NewReader(`{"user_name":"admin"}`))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testJSONContext(e, http.MethodPost, "/api/keys", strings.NewReader(`{"user_name":"admin"}`))
 
 	err := svc.addKey(c)
 	require.NoError(t, err)
@@ -187,10 +185,7 @@ func TestServices_AddKey_Custom(t *testing.T) {
 
 	e := echo.New()
 	body := `{"user_name":"admin","access_key":"AKIAIOSFODNN7EXAMPLE","secret_key":"abcdefghijklmnopqrstuvwxyz123456"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/keys", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testJSONContext(e, http.MethodPost, "/api/keys", strings.NewReader(body))
 
 	err := svc.addKey(c)
 	require.NoError(t, err)
@@ -211,10 +206,7 @@ func TestServices_AddKey_Duplicate(t *testing.T) {
 
 	e := echo.New()
 	body := `{"user_name":"admin","access_key":"AKIAIOSFODNN7EXAMPLE","secret_key":"abcdefghijklmnopqrstuvwxyz123456"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/keys", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testJSONContext(e, http.MethodPost, "/api/keys", strings.NewReader(body))
 
 	err := svc.addKey(c)
 	require.NoError(t, err)
@@ -238,10 +230,7 @@ func TestServices_AddKey_ValidationErrors(t *testing.T) {
 			// No KeyStore expectations: validation fails before the duplicate check
 
 			e := echo.New()
-			req := httptest.NewRequest(http.MethodPost, "/api/keys", strings.NewReader(tt.body))
-			req.Header.Set("Content-Type", "application/json")
-			rec := httptest.NewRecorder()
-			c := e.NewContext(req, rec)
+			c, rec := testJSONContext(e, http.MethodPost, "/api/keys", strings.NewReader(tt.body))
 
 			err := svc.addKey(c)
 			require.NoError(t, err)
@@ -259,9 +248,7 @@ func TestServices_DeleteKey(t *testing.T) {
 	mockKS.On("DeleteAccessKey", "AKIAIOSFODNN7EXAMPLE").Return(nil)
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodDelete, "/api/keys/AKIAIOSFODNN7EXAMPLE", nil)
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testContext(e, http.MethodDelete, "/api/keys/AKIAIOSFODNN7EXAMPLE")
 	c.SetPath("/api/keys/:accessKey")
 	c.SetPathValues(echo.PathValues{{Name: "accessKey", Value: "AKIAIOSFODNN7EXAMPLE"}})
 
@@ -278,9 +265,7 @@ func TestServices_DeleteKey_NotFound(t *testing.T) {
 	}, nil)
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodDelete, "/api/keys/AKIA_NONEXISTENT", nil)
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testContext(e, http.MethodDelete, "/api/keys/AKIA_NONEXISTENT")
 	c.SetPath("/api/keys/:accessKey")
 	c.SetPathValues(echo.PathValues{{Name: "accessKey", Value: "AKIA_NONEXISTENT"}})
 
@@ -296,9 +281,7 @@ func TestServices_DeleteKey_LastKey(t *testing.T) {
 	}, nil)
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodDelete, "/api/keys/AKIAIOSFODNN7EXAMPLE", nil)
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testContext(e, http.MethodDelete, "/api/keys/AKIAIOSFODNN7EXAMPLE")
 	c.SetPath("/api/keys/:accessKey")
 	c.SetPathValues(echo.PathValues{{Name: "accessKey", Value: "AKIAIOSFODNN7EXAMPLE"}})
 
@@ -331,19 +314,17 @@ func TestGenerateAccessKey_Uniqueness(t *testing.T) {
 func TestServices_GetS3Config(t *testing.T) {
 	svc, mockStore, _, _ := newTestServices(t)
 	mockStore.EXPECT().S3Config().Return(config.S3Config{
-		Directory:         "/data/s3d",
-		IndexerURL:        "https://sia.storage",
+		Directory:  "/data/s3d",
+		IndexerURL: "https://sia.storage",
 		AvailableIndexers: []config.IndexerOption{
 			{URL: "https://sia.pinner.xyz", Name: "Pinner"},
 			{URL: "https://sia.storage", Name: "Sia Storage"},
 		},
-		HostBases:         []string{"s3.example.com"},
+		HostBases: []string{"s3.example.com"},
 	})
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodGet, "/api/s3-config", nil)
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testContext(e, http.MethodGet, "/api/s3-config")
 
 	err := svc.getS3Config(c)
 	require.NoError(t, err)
@@ -361,13 +342,13 @@ func TestServices_GetS3Config(t *testing.T) {
 func TestServices_SetS3Config(t *testing.T) {
 	svc, mockStore, restarter, _ := newTestServices(t)
 	mockStore.EXPECT().S3Config().Return(config.S3Config{
-		Directory:         "/data/s3d",
-		IndexerURL:        "https://custom.storage",
+		Directory:  "/data/s3d",
+		IndexerURL: "https://custom.storage",
 		AvailableIndexers: []config.IndexerOption{
 			{URL: "https://sia.pinner.xyz", Name: "Pinner"},
 			{URL: "https://sia.storage", Name: "Sia Storage"},
 		},
-		HostBases:         []string{"s3.example.com"},
+		HostBases: []string{"s3.example.com"},
 	})
 	mockStore.EXPECT().SetS3Config(config.S3Config{
 		Directory:  "/new/data",
@@ -381,10 +362,7 @@ func TestServices_SetS3Config(t *testing.T) {
 
 	e := echo.New()
 	body := `{"directory":"/new/data","indexer_url":"https://custom.storage","available_indexers":[],"host_bases":["s3.example.com"]}`
-	req := httptest.NewRequest(http.MethodPut, "/api/s3-config", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testJSONContext(e, http.MethodPut, "/api/s3-config", strings.NewReader(body))
 
 	err := svc.setS3Config(c)
 	require.NoError(t, err)
@@ -398,10 +376,7 @@ func TestServices_SetS3Config_MissingDirectory(t *testing.T) {
 
 	e := echo.New()
 	body := `{"directory":"","indexer_url":"https://sia.storage"}`
-	req := httptest.NewRequest(http.MethodPut, "/api/s3-config", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testJSONContext(e, http.MethodPut, "/api/s3-config", strings.NewReader(body))
 
 	err := svc.setS3Config(c)
 	require.NoError(t, err)
@@ -416,9 +391,7 @@ func TestServices_GetSSLConfig(t *testing.T) {
 	})
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodGet, "/api/ssl-config", nil)
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testContext(e, http.MethodGet, "/api/ssl-config")
 
 	err := svc.getSSLConfig(c)
 	require.NoError(t, err)
@@ -438,10 +411,7 @@ func TestServices_SetSSLConfig(t *testing.T) {
 
 	e := echo.New()
 	body := `{"mode":"managed","acme_email":"admin@example.com"}`
-	req := httptest.NewRequest(http.MethodPut, "/api/ssl-config", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testJSONContext(e, http.MethodPut, "/api/ssl-config", strings.NewReader(body))
 
 	err := svc.setSSLConfig(c)
 	require.NoError(t, err)
@@ -457,10 +427,7 @@ func TestServices_SetSSLConfig_InvalidMode(t *testing.T) {
 
 	e := echo.New()
 	body := `{"mode":"invalid"}`
-	req := httptest.NewRequest(http.MethodPut, "/api/ssl-config", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testJSONContext(e, http.MethodPut, "/api/ssl-config", strings.NewReader(body))
 
 	err := svc.setSSLConfig(c)
 	require.NoError(t, err)
@@ -472,10 +439,7 @@ func TestServices_SetSSLConfig_ManagedMissingEmail(t *testing.T) {
 
 	e := echo.New()
 	body := `{"mode":"managed","acme_email":""}`
-	req := httptest.NewRequest(http.MethodPut, "/api/ssl-config", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testJSONContext(e, http.MethodPut, "/api/ssl-config", strings.NewReader(body))
 
 	err := svc.setSSLConfig(c)
 	require.NoError(t, err)
@@ -487,9 +451,7 @@ func TestServices_ListUsers(t *testing.T) {
 	mockKS.On("ListUsers").Return([]string{"admin", "bob"}, nil)
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodGet, "/api/users", nil)
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testContext(e, http.MethodGet, "/api/users")
 
 	err := svc.listUsers(c)
 	require.NoError(t, err)
@@ -505,10 +467,7 @@ func TestServices_CreateUser(t *testing.T) {
 	mockKS.On("CreateUser", "bob").Return(nil)
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodPost, "/api/users", strings.NewReader(`{"name":"bob"}`))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testJSONContext(e, http.MethodPost, "/api/users", strings.NewReader(`{"name":"bob"}`))
 
 	err := svc.createUser(c)
 	require.NoError(t, err)
@@ -524,10 +483,7 @@ func TestServices_CreateUser_Duplicate(t *testing.T) {
 	mockKS.On("CreateUser", "bob").Return(sia.ErrUserAlreadyExists)
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodPost, "/api/users", strings.NewReader(`{"name":"bob"}`))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testJSONContext(e, http.MethodPost, "/api/users", strings.NewReader(`{"name":"bob"}`))
 
 	err := svc.createUser(c)
 	require.NoError(t, err)
@@ -540,9 +496,7 @@ func TestServices_DeleteUser(t *testing.T) {
 	mockKS.On("DeleteUser", "bob").Return(nil)
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodDelete, "/api/users/bob", nil)
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testContext(e, http.MethodDelete, "/api/users/bob")
 	c.SetPath("/api/users/:name")
 	c.SetPathValues(echo.PathValues{{Name: "name", Value: "bob"}})
 
@@ -554,13 +508,11 @@ func TestServices_DeleteUser(t *testing.T) {
 func TestServices_ListUserKeys(t *testing.T) {
 	svc, _, _, mockKS := newTestServices(t)
 	mockKS.On("ListAccessKeys", mock.Anything).Return([]backend.AccessKeyInfo{
-		{AccessKeyID: "AKIAONE", SecretKey: "secret", UserName: "bob"},
+		{AccessKeyID: "AKIAONE", SecretKey: testSecretKey, UserName: "bob"},
 	}, nil)
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodGet, "/api/users/bob/keys", nil)
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testContext(e, http.MethodGet, "/api/users/bob/keys")
 	c.SetPath("/api/users/:name/keys")
 	c.SetPathValues(echo.PathValues{{Name: "name", Value: "bob"}})
 
@@ -578,13 +530,11 @@ func TestServices_ListUserKeys(t *testing.T) {
 func TestServices_ListKeys_IncludesUserName(t *testing.T) {
 	svc, _, _, mockKS := newTestServices(t)
 	mockKS.On("ListAccessKeys", mock.Anything).Return([]backend.AccessKeyInfo{
-		{AccessKeyID: "AKIAONE", SecretKey: "secret", UserName: "admin"},
+		{AccessKeyID: "AKIAONE", SecretKey: testSecretKey, UserName: "admin"},
 	}, nil)
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodGet, "/api/keys", nil)
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testContext(e, http.MethodGet, "/api/keys")
 
 	err := svc.listKeys(c)
 	require.NoError(t, err)
@@ -603,10 +553,7 @@ func TestServices_AddKey_WithUserName(t *testing.T) {
 
 	e := echo.New()
 	body := `{"user_name":"custom"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/keys", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testJSONContext(e, http.MethodPost, "/api/keys", strings.NewReader(body))
 
 	err := svc.addKey(c)
 	require.NoError(t, err)
@@ -625,9 +572,7 @@ func TestServices_ListBuckets(t *testing.T) {
 	}, nil)
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodGet, "/api/buckets", nil)
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testContext(e, http.MethodGet, "/api/buckets")
 
 	err := svc.listBuckets(c)
 	require.NoError(t, err)
@@ -647,15 +592,12 @@ func TestServices_CreateBucket(t *testing.T) {
 	svc.backend = func() backend.Backend { return mockBackend }
 
 	mockKS.On("ListAccessKeys", mock.Anything).Return([]backend.AccessKeyInfo{
-		{AccessKeyID: "AKIAADMIN", SecretKey: "secret"},
+		{AccessKeyID: "AKIAADMIN", SecretKey: testSecretKey},
 	}, nil)
 	mockBackend.On("CreateBucket", mock.Anything, "AKIAADMIN", "mybucket").Return(nil)
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodPost, "/api/buckets", strings.NewReader(`{"name":"mybucket"}`))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testJSONContext(e, http.MethodPost, "/api/buckets", strings.NewReader(`{"name":"mybucket"}`))
 
 	err := svc.createBucket(c)
 	require.NoError(t, err)
@@ -672,14 +614,12 @@ func TestServices_DeleteBucket(t *testing.T) {
 	svc.backend = func() backend.Backend { return mockBackend }
 
 	mockKS.On("ListAccessKeys", mock.Anything).Return([]backend.AccessKeyInfo{
-		{AccessKeyID: "AKIAADMIN", SecretKey: "secret"},
+		{AccessKeyID: "AKIAADMIN", SecretKey: testSecretKey},
 	}, nil)
 	mockBackend.On("DeleteBucket", mock.Anything, "AKIAADMIN", "mybucket").Return(nil)
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodDelete, "/api/buckets/mybucket", nil)
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testContext(e, http.MethodDelete, "/api/buckets/mybucket")
 	c.SetPath("/api/buckets/:name")
 	c.SetPathValues(echo.PathValues{{Name: "name", Value: "mybucket"}})
 
@@ -694,14 +634,12 @@ func TestServices_GetBucketVersioning(t *testing.T) {
 	svc.backend = func() backend.Backend { return mockBackend }
 
 	mockKS.On("ListAccessKeys", mock.Anything).Return([]backend.AccessKeyInfo{
-		{AccessKeyID: "AKIAADMIN", SecretKey: "secret"},
+		{AccessKeyID: "AKIAADMIN", SecretKey: testSecretKey},
 	}, nil)
 	mockBackend.On("GetBucketVersioning", mock.Anything, "AKIAADMIN", "mybucket").Return("Enabled", nil)
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodGet, "/api/buckets/mybucket/versioning", nil)
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testContext(e, http.MethodGet, "/api/buckets/mybucket/versioning")
 	c.SetPath("/api/buckets/:name/versioning")
 	c.SetPathValues(echo.PathValues{{Name: "name", Value: "mybucket"}})
 
@@ -720,15 +658,12 @@ func TestServices_PutBucketVersioning(t *testing.T) {
 	svc.backend = func() backend.Backend { return mockBackend }
 
 	mockKS.On("ListAccessKeys", mock.Anything).Return([]backend.AccessKeyInfo{
-		{AccessKeyID: "AKIAADMIN", SecretKey: "secret"},
+		{AccessKeyID: "AKIAADMIN", SecretKey: testSecretKey},
 	}, nil)
 	mockBackend.On("PutBucketVersioning", mock.Anything, "AKIAADMIN", "mybucket", "Enabled").Return(nil)
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodPut, "/api/buckets/mybucket/versioning", strings.NewReader(`{"status":"Enabled"}`))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testJSONContext(e, http.MethodPut, "/api/buckets/mybucket/versioning", strings.NewReader(`{"status":"Enabled"}`))
 	c.SetPath("/api/buckets/:name/versioning")
 	c.SetPathValues(echo.PathValues{{Name: "name", Value: "mybucket"}})
 
@@ -747,10 +682,7 @@ func TestServices_PutBucketVersioning_InvalidStatus(t *testing.T) {
 	svc.backend = func() backend.Backend { return mockBackend }
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodPut, "/api/buckets/mybucket/versioning", strings.NewReader(`{"status":"Bogus"}`))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testJSONContext(e, http.MethodPut, "/api/buckets/mybucket/versioning", strings.NewReader(`{"status":"Bogus"}`))
 	c.SetPath("/api/buckets/:name/versioning")
 	c.SetPathValues(echo.PathValues{{Name: "name", Value: "mybucket"}})
 
@@ -777,9 +709,7 @@ func TestServices_CreateBackup(t *testing.T) {
 	})
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodPost, "/api/admin/backup", nil)
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testContext(e, http.MethodPost, "/api/admin/backup")
 
 	err := svc.createBackup(c)
 	require.NoError(t, err)
@@ -800,9 +730,7 @@ func TestServices_ListBackups(t *testing.T) {
 	mockStore.EXPECT().S3Config().Return(config.S3Config{Directory: tmpDir}).Once()
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodGet, "/api/backups", nil)
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testContext(e, http.MethodGet, "/api/backups")
 
 	err := svc.listBackups(c)
 	require.NoError(t, err)
@@ -824,9 +752,7 @@ func TestServices_GetBackup(t *testing.T) {
 	mockStore.EXPECT().S3Config().Return(config.S3Config{Directory: tmpDir}).Once()
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodGet, "/api/backups/b1.db", nil)
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testContext(e, http.MethodGet, "/api/backups/b1.db")
 	c.SetPath("/api/backups/:filename")
 	c.SetPathValues(echo.PathValues{{Name: "filename", Value: "b1.db"}})
 
@@ -846,9 +772,7 @@ func TestServices_DeleteBackup(t *testing.T) {
 	mockStore.EXPECT().S3Config().Return(config.S3Config{Directory: tmpDir}).Once()
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodDelete, "/api/backups/b1.db", nil)
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testContext(e, http.MethodDelete, "/api/backups/b1.db")
 	c.SetPath("/api/backups/:filename")
 	c.SetPathValues(echo.PathValues{{Name: "filename", Value: "b1.db"}})
 
@@ -870,9 +794,7 @@ func TestServices_GetStats_Proxy(t *testing.T) {
 	})
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodGet, "/api/admin/stats", nil)
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testContext(e, http.MethodGet, "/api/admin/stats")
 
 	err := svc.getStats(c)
 	require.NoError(t, err)
@@ -885,15 +807,13 @@ func TestServices_UsersPage(t *testing.T) {
 	svc.csrfToken = func(*echo.Context) string { return "csrf-token" }
 	mockKS.On("ListUsers").Return([]string{"admin", "bob"}, nil)
 	mockKS.On("ListAccessKeys", mock.Anything).Return([]backend.AccessKeyInfo{
-		{AccessKeyID: "AKIAADMIN", SecretKey: "secret", UserName: "admin"},
-		{AccessKeyID: "AKIABOB", SecretKey: "secret", UserName: "bob"},
-		{AccessKeyID: "AKIAADMIN2", SecretKey: "secret", UserName: "admin"},
+		{AccessKeyID: "AKIAADMIN", SecretKey: testSecretKey, UserName: "admin"},
+		{AccessKeyID: "AKIABOB", SecretKey: testSecretKey, UserName: "bob"},
+		{AccessKeyID: "AKIAADMIN2", SecretKey: testSecretKey, UserName: "admin"},
 	}, nil)
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodGet, "/users", nil)
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testContext(e, http.MethodGet, "/users")
 
 	err := svc.usersPage(c)
 	require.NoError(t, err)
@@ -920,9 +840,7 @@ func TestServices_BucketsPage(t *testing.T) {
 	mockBackend.On("BucketVersioning", mock.Anything, "test-bucket").Return("", nil)
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodGet, "/buckets", nil)
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testContext(e, http.MethodGet, "/buckets")
 
 	err := svc.bucketsPage(c)
 	require.NoError(t, err)
@@ -941,9 +859,7 @@ func TestServices_BackupsPage(t *testing.T) {
 	svc.csrfToken = func(*echo.Context) string { return "csrf-token" }
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodGet, "/backups", nil)
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testContext(e, http.MethodGet, "/backups")
 
 	err := svc.backupsPage(c)
 	require.NoError(t, err)
@@ -971,9 +887,7 @@ func TestServices_MonitoringPage(t *testing.T) {
 	})
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodGet, "/monitoring", nil)
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testContext(e, http.MethodGet, "/monitoring")
 
 	err := svc.monitoringPage(c)
 	require.NoError(t, err)
@@ -991,9 +905,7 @@ func TestServices_SystemFlush(t *testing.T) {
 	mockBackend.On("FlushObjects", mock.Anything).Return(nil)
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodPost, "/api/system/flush", nil)
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testContext(e, http.MethodPost, "/api/system/flush")
 
 	err := svc.systemFlush(c)
 	require.NoError(t, err)
@@ -1005,9 +917,7 @@ func TestServices_SystemFlush_BackendNotReady(t *testing.T) {
 	// no backend set: getBackend() returns nil
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodPost, "/api/system/flush", nil)
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testContext(e, http.MethodPost, "/api/system/flush")
 
 	err := svc.systemFlush(c)
 	require.ErrorIs(t, err, errResponseSent)
@@ -1022,9 +932,7 @@ func TestServices_SystemFlush_Error(t *testing.T) {
 	mockBackend.On("FlushObjects", mock.Anything).Return(assert.AnError)
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodPost, "/api/system/flush", nil)
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testContext(e, http.MethodPost, "/api/system/flush")
 
 	err := svc.systemFlush(c)
 	require.NoError(t, err)
@@ -1035,9 +943,7 @@ func TestServices_SystemRestart(t *testing.T) {
 	svc, _, restarter, _ := newTestServices(t)
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodPost, "/api/system/restart", nil)
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testContext(e, http.MethodPost, "/api/system/restart")
 
 	err := svc.systemRestart(c)
 	require.NoError(t, err)
@@ -1057,9 +963,7 @@ func TestServices_SystemRestart_Error(t *testing.T) {
 	restarter.On("Restart", mock.Anything).Return(assert.AnError)
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodPost, "/api/system/restart", nil)
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testContext(e, http.MethodPost, "/api/system/restart")
 
 	err := svc.systemRestart(c)
 	require.NoError(t, err)
@@ -1080,10 +984,7 @@ func TestServices_AddKey_NilBackendStatus(t *testing.T) {
 	mockKS.On("CreateAccessKey", "admin", mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil)
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodPost, "/api/keys", strings.NewReader(`{"user_name":"admin"}`))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testJSONContext(e, http.MethodPost, "/api/keys", strings.NewReader(`{"user_name":"admin"}`))
 
 	// Should not panic: nil-guard returns false for backendRunning
 	err := svc.addKey(c)
@@ -1100,10 +1001,7 @@ func TestServices_AddKey_NilRestarter(t *testing.T) {
 	mockKS.On("CreateAccessKey", "admin", mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil)
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodPost, "/api/keys", strings.NewReader(`{"user_name":"admin"}`))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testJSONContext(e, http.MethodPost, "/api/keys", strings.NewReader(`{"user_name":"admin"}`))
 
 	err := svc.addKey(c)
 	require.NoError(t, err)
@@ -1120,14 +1018,12 @@ func TestServices_KeysPage_NilBackendStatus(t *testing.T) {
 	svc.backendStatus = nil
 	svc.csrfToken = func(*echo.Context) string { return "csrf-token" }
 	mockKS.On("ListAccessKeys", mock.Anything).Return([]backend.AccessKeyInfo{
-		{AccessKeyID: "AKIATEST", SecretKey: "secret", UserName: "admin"},
+		{AccessKeyID: "AKIATEST", SecretKey: testSecretKey, UserName: "admin"},
 	}, nil)
 	mockKS.On("ListUsers").Return([]string{"admin"}, nil)
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodGet, "/keys", nil)
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, _ := testContext(e, http.MethodGet, "/keys")
 
 	// Should not panic: nil-guard returns false for backendRunning
 	err := svc.keysPage(c)
@@ -1145,9 +1041,7 @@ func TestServices_ListKeys_SecretKeyIncluded(t *testing.T) {
 	}, nil)
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodGet, "/api/keys", nil)
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testContext(e, http.MethodGet, "/api/keys")
 
 	err := svc.listKeys(c)
 	require.NoError(t, err)
@@ -1186,9 +1080,7 @@ func TestServices_DeleteKey_Concurrent_LastKey(t *testing.T) {
 		go func(idx int) {
 			defer wg.Done()
 			e := echo.New()
-			req := httptest.NewRequest(http.MethodDelete, "/api/keys/AKIAONE", nil)
-			rec := httptest.NewRecorder()
-			c := e.NewContext(req, rec)
+			c, _ := testContext(e, http.MethodDelete, "/api/keys/AKIAONE")
 			c.SetPath("/api/keys/:accessKey")
 			c.SetPathValues(echo.PathValues{{Name: "accessKey", Value: "AKIAONE"}})
 			errs[idx] = svc.deleteKey(c)
@@ -1210,9 +1102,7 @@ func TestServices_DeleteUser_NotifiesSSE(t *testing.T) {
 	mockKS.On("DeleteUser", "bob").Return(nil)
 
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodDelete, "/api/users/bob", nil)
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+	c, rec := testContext(e, http.MethodDelete, "/api/users/bob")
 	c.SetPath("/api/users/:name")
 	c.SetPathValues(echo.PathValues{{Name: "name", Value: "bob"}})
 
@@ -1269,10 +1159,7 @@ func TestServices_KeyMutation_LockReleasedDuringRestart(t *testing.T) {
 	addDone := make(chan error, 1)
 	go func() {
 		e := echo.New()
-		req := httptest.NewRequest(http.MethodPost, "/api/keys", strings.NewReader(`{"user_name":"admin","access_key":"AKIANEW","secret_key":"abcdefghijklmnopqrstuvwxyz0123456789"}`))
-		req.Header.Set("Content-Type", "application/json")
-		rec := httptest.NewRecorder()
-		c := e.NewContext(req, rec)
+		c, _ := testJSONContext(e, http.MethodPost, "/api/keys", strings.NewReader(`{"user_name":"admin","access_key":"AKIANEW","secret_key":"abcdefghijklmnopqrstuvwxyz0123456789"}`))
 		addDone <- svc.addKey(c)
 	}()
 
@@ -1283,9 +1170,7 @@ func TestServices_KeyMutation_LockReleasedDuringRestart(t *testing.T) {
 	readDone := make(chan error, 1)
 	go func() {
 		e := echo.New()
-		req := httptest.NewRequest(http.MethodGet, "/api/keys", nil)
-		rec := httptest.NewRecorder()
-		c := e.NewContext(req, rec)
+		c, _ := testContext(e, http.MethodGet, "/api/keys")
 		readDone <- svc.listKeys(c)
 	}()
 
@@ -1340,12 +1225,12 @@ func (s *stubKeyStore) CreateAccessKey(userName, accessKeyID, secretKey string) 
 	return nil
 }
 
-func (s *stubKeyStore) CreateUser(name string) error         { return nil }
-func (s *stubKeyStore) DeleteUser(name string) error         { return nil }
-func (s *stubKeyStore) ListUsers() ([]string, error)        { return nil, nil }
-func (s *stubKeyStore) AppKey() (types.PrivateKey, string, error) { return types.PrivateKey{}, "", nil }
+func (s *stubKeyStore) CreateUser(name string) error                 { return nil }
+func (s *stubKeyStore) DeleteUser(name string) error                 { return nil }
+func (s *stubKeyStore) ListUsers() ([]string, error)                 { return nil, nil }
+func (s *stubKeyStore) AppKey() (types.PrivateKey, string, error)    { return types.PrivateKey{}, "", nil }
 func (s *stubKeyStore) SetAppKey(_ types.PrivateKey, _ string) error { return nil }
-func (s *stubKeyStore) Close() error                          { return nil }
+func (s *stubKeyStore) Close() error                                 { return nil }
 
 // slowRestarter blocks on a channel until released, simulating a slow backend restart.
 type slowRestarter struct {
@@ -1355,4 +1240,166 @@ type slowRestarter struct {
 func (r *slowRestarter) Restart(_ context.Context) error {
 	<-r.done
 	return nil
+}
+
+// --- Page handler tests (1.3) -----------------------------------------------
+
+func TestServices_DashboardPage(t *testing.T) {
+	svc, _, _, mockKS := newTestServices(t)
+	svc.csrfToken = func(*echo.Context) string { return "csrf-token" }
+	svc.version = "v1.0.0"
+	mockKS.On("ListUsers").Return([]string{"admin"}, nil)
+	mockKS.On("ListAccessKeys", mock.Anything).Return([]backend.AccessKeyInfo{
+		{AccessKeyID: "AKIAADMIN", SecretKey: testSecretKey, UserName: "admin"},
+	}, nil)
+
+	e := echo.New()
+	c, rec := testContext(e, http.MethodGet, "/dashboard")
+
+	err := svc.dashboardPage(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), "admin")
+}
+
+func TestServices_DashboardPage_WithBackend(t *testing.T) {
+	svc, _, _, mockKS := newTestServices(t)
+	mockBackend := backendMocks.NewMockBackend(t)
+	svc.backend = func() backend.Backend { return mockBackend }
+	svc.csrfToken = func(*echo.Context) string { return "csrf-token" }
+	mockKS.On("ListUsers").Return([]string{"admin", "bob"}, nil)
+	mockKS.On("ListAccessKeys", mock.Anything).Return([]backend.AccessKeyInfo{
+		{AccessKeyID: "AKIAADMIN", SecretKey: testSecretKey, UserName: "admin"},
+		{AccessKeyID: "AKIABOB", SecretKey: testSecretKey, UserName: "bob"},
+	}, nil)
+	mockBackend.On("BucketCountForUser", mock.Anything, "admin").Return(3, nil)
+	mockBackend.On("BucketCountForUser", mock.Anything, "bob").Return(1, nil)
+
+	e := echo.New()
+	c, rec := testContext(e, http.MethodGet, "/dashboard")
+
+	err := svc.dashboardPage(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestServices_DashboardPage_Empty(t *testing.T) {
+	svc, _, _, mockKS := newTestServices(t)
+	svc.csrfToken = func(*echo.Context) string { return "csrf-token" }
+	mockKS.On("ListUsers").Return([]string{}, nil)
+	mockKS.On("ListAccessKeys", mock.Anything).Return([]backend.AccessKeyInfo{}, nil)
+
+	e := echo.New()
+	c, rec := testContext(e, http.MethodGet, "/dashboard")
+
+	err := svc.dashboardPage(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestServices_SettingsPage(t *testing.T) {
+	svc, mockStore, _, _ := newTestServices(t)
+	svc.csrfToken = func(*echo.Context) string { return "csrf-token" }
+	mockStore.EXPECT().S3Config().Return(config.S3Config{Directory: "/data"}).Once()
+	mockStore.EXPECT().SSLConfig().Return(config.SSLConfig{}).Once()
+	mockStore.EXPECT().LogConfig().Return(config.LogConfig{Level: "info"}).Once()
+
+	e := echo.New()
+	c, rec := testContext(e, http.MethodGet, "/settings")
+
+	err := svc.settingsPage(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestServices_SettingsPage_NilUpdater(t *testing.T) {
+	svc, mockStore, _, _ := newTestServices(t)
+	svc.csrfToken = func(*echo.Context) string { return "csrf-token" }
+	svc.updater = nil // nil updater should not panic
+	mockStore.EXPECT().S3Config().Return(config.S3Config{}).Once()
+	mockStore.EXPECT().SSLConfig().Return(config.SSLConfig{}).Once()
+	mockStore.EXPECT().LogConfig().Return(config.LogConfig{}).Once()
+
+	e := echo.New()
+	c, rec := testContext(e, http.MethodGet, "/settings")
+
+	err := svc.settingsPage(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestServices_KeysPage_WithUserFilter(t *testing.T) {
+	svc, _, _, mockKS := newTestServices(t)
+	svc.csrfToken = func(*echo.Context) string { return "csrf-token" }
+	svc.backendStatus = func() status.Status { return status.Running }
+	mockKS.On("ListUsers").Return([]string{"admin", "bob"}, nil)
+	mockKS.On("ListAccessKeys", mock.Anything).Return([]backend.AccessKeyInfo{
+		{AccessKeyID: "AKIAADMIN", SecretKey: testSecretKey, UserName: "admin"},
+		{AccessKeyID: "AKIABOB", SecretKey: testSecretKey, UserName: "bob"},
+	}, nil)
+
+	e := echo.New()
+	c, rec := testContext(e, http.MethodGet, "/keys?user=bob")
+
+	err := svc.keysPage(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), "bob")
+	assert.NotContains(t, rec.Body.String(), "AKIAADMIN")
+}
+
+func TestServices_KeysPage_UserFilterNoKeys(t *testing.T) {
+	svc, _, _, mockKS := newTestServices(t)
+	svc.csrfToken = func(*echo.Context) string { return "csrf-token" }
+	svc.backendStatus = func() status.Status { return status.Running }
+	mockKS.On("ListUsers").Return([]string{"admin", "bob"}, nil)
+	mockKS.On("ListAccessKeys", mock.Anything).Return([]backend.AccessKeyInfo{
+		{AccessKeyID: "AKIAADMIN", SecretKey: testSecretKey, UserName: "admin"},
+	}, nil)
+
+	e := echo.New()
+	c, rec := testContext(e, http.MethodGet, "/keys?user=bob")
+
+	// bob has no keys: should render empty group, not panic
+	err := svc.keysPage(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), "bob")
+}
+
+func TestServices_KeysPage_BackendRunning(t *testing.T) {
+	svc, _, _, mockKS := newTestServices(t)
+	mockBackend := backendMocks.NewMockBackend(t)
+	svc.backend = func() backend.Backend { return mockBackend }
+	svc.csrfToken = func(*echo.Context) string { return "csrf-token" }
+	svc.backendStatus = func() status.Status { return status.Running }
+	mockKS.On("ListUsers").Return([]string{"admin"}, nil)
+	mockKS.On("ListAccessKeys", mock.Anything).Return([]backend.AccessKeyInfo{
+		{AccessKeyID: "AKIAADMIN", SecretKey: testSecretKey, UserName: "admin"},
+	}, nil)
+	mockBackend.On("BucketCountForUser", mock.Anything, "admin").Return(5, nil)
+
+	e := echo.New()
+	c, rec := testContext(e, http.MethodGet, "/keys")
+
+	err := svc.keysPage(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestServices_KeysPage_BackendStopped(t *testing.T) {
+	svc, _, _, mockKS := newTestServices(t)
+	svc.csrfToken = func(*echo.Context) string { return "csrf-token" }
+	svc.backendStatus = func() status.Status { return status.Stopped }
+	mockKS.On("ListUsers").Return([]string{"admin"}, nil)
+	mockKS.On("ListAccessKeys", mock.Anything).Return([]backend.AccessKeyInfo{
+		{AccessKeyID: "AKIAADMIN", SecretKey: testSecretKey, UserName: "admin"},
+	}, nil)
+
+	e := echo.New()
+	c, rec := testContext(e, http.MethodGet, "/keys")
+
+	err := svc.keysPage(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
 }

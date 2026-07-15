@@ -4,11 +4,11 @@
 // The panel never touches the Docker socket or uses os/exec.  All control
 // flows through simple flag files on the /state volume:
 //
-//   /state/autoupdate.enabled   : presence => auto-update on (default)
-//   /state/autoupdate.disabled  : presence => auto-update off (takes precedence)
-//   /state/update.trigger       : presence => one-shot manual update trigger
-//   /state/updater.log          : append-only log (panel reads for display)
-//   /state/last-digest          : last-applied image digest
+//	/state/autoupdate.enabled   : presence => auto-update on (default)
+//	/state/autoupdate.disabled  : presence => auto-update off (takes precedence)
+//	/state/update.trigger       : presence => one-shot manual update trigger
+//	/state/updater.log          : append-only log (panel reads for display)
+//	/state/last-digest          : last-applied image digest
 package updater
 
 import (
@@ -181,7 +181,7 @@ func (m *Manager) Status() UpdateStatus {
 	return UpdateStatus{
 		SidecarMode:  true,
 		AutoUpdateOn: m.IsAutoUpdateOn(),
-		LastDigest:  m.LastDigest(),
-		UpdaterLog:  m.UpdaterLog(50),
+		LastDigest:   m.LastDigest(),
+		UpdaterLog:   m.UpdaterLog(50),
 	}
 }

@@ -34,16 +34,14 @@ func setupLifecycleServices(t *testing.T, withKey bool) (*Services, *backendMock
 
 func lifecycleContext(method, bucket, body string) (*echo.Context, *httptest.ResponseRecorder) {
 	e := echo.New()
-	var req *http.Request
 	path := "/api/buckets/" + bucket + "/lifecycle"
+	var c *echo.Context
+	var rec *httptest.ResponseRecorder
 	if body != "" {
-		req = httptest.NewRequest(method, path, strings.NewReader(body))
-		req.Header.Set("Content-Type", "application/json")
+		c, rec = testJSONContext(e, method, path, strings.NewReader(body))
 	} else {
-		req = httptest.NewRequest(method, path, nil)
+		c, rec = testContext(e, method, path)
 	}
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
 	c.SetPath("/api/buckets/:name/lifecycle")
 	c.SetPathValues(echo.PathValues{{Name: "name", Value: bucket}})
 	return c, rec
@@ -57,9 +55,9 @@ func TestServices_GetBucketLifecycle_OK(t *testing.T) {
 		Return(s3.LifecycleConfiguration{
 			Rules: []s3.LifecycleRule{
 				{
-					ID:     "rule-1",
-					Status: s3.LifecycleStatusEnabled,
-					Filter: &s3.LifecycleFilter{Prefix: &allObj},
+					ID:         "rule-1",
+					Status:     s3.LifecycleStatusEnabled,
+					Filter:     &s3.LifecycleFilter{Prefix: &allObj},
 					Expiration: &s3.LifecycleExpiration{Days: 30},
 				},
 			},

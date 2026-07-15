@@ -14,8 +14,8 @@ import (
 // account info from the backend's AccountClient. It is safe for concurrent
 // use: each call creates its own recorder.
 type AdminStatsFetcher struct {
-	AdminHandler   http.Handler
-	AccountClient  func() backend.AccountClient
+	AdminHandler  http.Handler
+	AccountClient func() backend.AccountClient
 }
 
 // FetchStats calls the s3d admin /stats/uploads endpoint and the account
@@ -78,6 +78,6 @@ type captureRecorder struct {
 	body   bytes.Buffer
 }
 
-func (r *captureRecorder) Header() http.Header        { return r.header }
-func (r *captureRecorder) WriteHeader(code int)       { r.code = code }
+func (r *captureRecorder) Header() http.Header         { return r.header }
+func (r *captureRecorder) WriteHeader(code int)        { r.code = code }
 func (r *captureRecorder) Write(p []byte) (int, error) { return r.body.Write(p) }

@@ -5,10 +5,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/labstack/echo/v5"
 	"go.lumeweb.com/s3-server/internal/api"
 	"go.lumeweb.com/s3-server/internal/routes"
 	"go.lumeweb.com/s3-server/internal/store"
-	"github.com/labstack/echo/v5"
 )
 
 const (
