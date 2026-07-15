@@ -1,5 +1,7 @@
 package views
 
+import "go.lumeweb.com/s3-server/internal/views/components"
+
 templ Onboarding(csrfToken string, publicKey string) {
 	@Base("Setup", OnboardingContent(csrfToken, publicKey))
 }
@@ -7,7 +9,7 @@ templ Onboarding(csrfToken string, publicKey string) {
 templ OnboardingContent(csrfToken string, publicKey string) {
 	<div class="flex items-center justify-center min-h-screen" x-data="onboardingWizard" x-cloak data-onboarding>
 		<div class="card w-full max-w-lg p-8">
-			@LogoTitle("S3 Setup", true)
+			@components.LogoTitle("S3 Setup", true)
 			<!-- Step indicators -->
 			<div class="flex items-center justify-center mb-8">
 				<template x-for="(step, i) in steps" :key="i">
@@ -26,28 +28,14 @@ templ OnboardingContent(csrfToken string, publicKey string) {
 				<h2 class="step-heading">Set Admin Password</h2>
 				<p class="step-desc">This password protects the admin panel. Minimum 8 characters.</p>
 				<form @submit.prevent="setAdminPassword()" class="space-y-4">
-					@FormRow("Password", "admin-password", "") {
-						<div class="relative">
-							<input :type="showPw ? 'text' : 'password'" id="admin-password" x-model="adminPassword" required minlength="8" autocomplete="new-password" class="form-input pr-10" placeholder="Admin password"/>
-							<button type="button" @click="showPw = !showPw" class="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-primary transition-colors" :aria-label="showPw ? 'Hide password' : 'Show password'">
-								<svg x-show="!showPw" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-								<svg x-show="showPw" x-cloak xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"></path><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"></path><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"></path><line x1="2" y1="2" x2="22" y2="22"></line></svg>
-							</button>
-						</div>
-					}
-					@FormRow("Confirm Password", "admin-password-confirm", "") {
-						<div class="relative">
-							<input :type="showPw ? 'text' : 'password'" id="admin-password-confirm" x-model="adminPasswordConfirm" required minlength="8" autocomplete="new-password" class="form-input pr-10" placeholder="Confirm password"/>
-							<button type="button" @click="showPw = !showPw" class="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-primary transition-colors" :aria-label="showPw ? 'Hide password' : 'Show password'">
-								<svg x-show="!showPw" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-								<svg x-show="showPw" x-cloak xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"></path><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"></path><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"></path><line x1="2" y1="2" x2="22" y2="22"></line></svg>
-							</button>
-						</div>
-					}
-					<button type="submit" :disabled={ "loading || adminPassword !== adminPasswordConfirm || adminPassword.length < 8" } class="btn-full">
-						<span x-show="!loading">Continue</span>
-						<span x-show="loading" aria-live="polite">Processing...</span>
-					</button>
+					@components.PasswordField("Password", "admin-password", "Admin password", "new-password", templ.Attributes{"x-model": "adminPassword", "minlength": "8"})
+					@components.PasswordField("Confirm Password", "admin-password-confirm", "Confirm password", "new-password", templ.Attributes{"x-model": "adminPasswordConfirm", "minlength": "8"})
+					@components.LoadingButton("Continue", components.LoadingButtonOpts{
+						Type:         "submit",
+						LoadingProp:  "loading",
+						Disabled:     "loading || adminPassword !== adminPasswordConfirm || adminPassword.length < 8",
+						LoadingLabel: "Processing...",
+					})
 				</form>
 			</div>
 			<!-- Step 1: Sia Connection -->
@@ -55,66 +43,199 @@ templ OnboardingContent(csrfToken string, publicKey string) {
 				<!-- 1a: Connect form -->
 				<div x-show="siaStep === 'connect'">
 					<h2 class="step-heading">Connect to Sia Network</h2>
-					<p class="step-desc">Connect your Sia account to this server. You'll be redirected to a managed Sia portal to approve the connection, then given a 12-word Recovery Key. Write it down; it's the only way to recover your account if you lose access. No one — including us — can regenerate it for you.</p>
-					<div class="space-y-4 mb-4">
-						@FormRow("Sia portal", "sia-indexer", "Select a managed Sia portal or provide a custom URL") {
-							<select id="sia-indexer" x-model="indexerSelection" aria-describedby="sia-indexer-hint" class="form-select">
-								<template x-for="(url, i) in siaConfig?.available_indexers || []" :key="i">
-									<option :value="url" x-text="url"></option>
+					<p class="step-desc">Connect your Sia account to this server. You'll be redirected to a managed Sia portal to approve the connection, then given a 12-word Recovery Key. Write it down; it's the only way to recover your account if you lose access. No one, including us, can regenerate it for you.</p>
+					<div class="space-y-3 mb-4">
+						<p class="text-sm font-medium font-body text-muted-foreground">Indexer</p>
+						<template x-for="(indexer, i) in (siaConfig?.available_indexers || [])" :key="i">
+							<button
+								type="button"
+								class="w-full flex items-center gap-3 p-4 rounded-xl border-2 border-border transition-all duration-200 text-left"
+								:style="indexerSelection === indexer.url
+									? (indexer.brand_color
+										? `background-color: ${indexer.brand_color}; border-color: ${indexer.brand_color}; transform: scale(1.03)`
+										: 'transform: scale(1.03)')
+									: (indexer.brand_color
+										? `background-color: ${indexer.brand_color}`
+										: '')"
+								@click="indexerSelection = indexer.url"
+								:aria-pressed="indexerSelection === indexer.url"
+							>
+								<!-- Pinner logo: exact paths from pinner.xyz -->
+								<template x-if="indexer.logo === 'pinner'">
+									<div class="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 bg-card">
+										<svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" viewBox="0 0 373 373" fill="none">
+											<path d="M45.9695 213.883C20.9759 188.89 20.9759 148.367 45.9695 123.374L78.4392 90.9038C89.3635 79.9796 107.075 79.9796 117.999 90.9039V90.9039C128.924 101.828 128.924 119.54 117.999 130.464L108.867 139.597C92.8983 155.565 92.8983 181.455 108.867 197.423L224.149 312.705C235.106 323.662 235.106 341.427 224.149 352.384V352.384C213.192 363.341 195.427 363.341 184.47 352.384L45.9695 213.883Z" fill="#ADF0DD"/>
+											<path d="M253.686 85.7724C278.68 110.766 278.68 151.288 253.686 176.282L218.76 211.208C209.362 220.606 194.124 220.606 184.726 211.208V211.208C175.327 201.81 175.327 186.572 184.726 177.173L196.53 165.369C212.448 149.45 212.448 123.642 196.53 107.724L148.851 60.045C137.929 49.1225 137.929 31.4137 148.851 20.4912V20.4912C159.774 9.56872 177.483 9.56872 188.405 20.4912L253.686 85.7724Z" fill="#BFEEDE"/>
+										</svg>
+									</div>
 								</template>
-								<option value="__custom__">Custom</option>
-							</select>
-						}
-						<div x-show="indexerSelection === '__custom__'">
-							@FormRow("Custom Sia portal URL", "sia-custom-indexer", "https:// will be added automatically if omitted") {
-								<input type="text" id="sia-custom-indexer" x-model="customIndexer" class="form-input" placeholder="sia.example.com"/>
+								<!-- Sia Storage logo: pixel blocks from sia.storage -->
+								<template x-if="indexer.logo === 'sia-storage'">
+									<div class="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 bg-card">
+										<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="396 94 26 26" fill="none">
+											<rect x="398" y="96" width="11" height="11" fill="#F012BE"/>
+											<rect x="409" y="96" width="11" height="11" fill="#B9E400"/>
+											<rect x="409" y="107" width="11" height="11" fill="#7FE8FF"/>
+										</svg>
+									</div>
+								</template>
+								<!-- Generic star fallback -->
+								<template x-if="!indexer.logo || (indexer.logo !== 'pinner' && indexer.logo !== 'sia-storage')">
+									<div class="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 bg-card">
+										<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-primary" fill="currentColor" viewBox="0 0 20 20">
+											<path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.539 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+										</svg>
+									</div>
+								</template>
+								<span class="flex-1">
+									<span class="block text-sm font-medium font-body text-foreground"
+										:style="indexer.contrast_color ? `color: ${indexer.contrast_color}` : ''"
+										x-text="indexer.name"></span>
+									<span class="block text-xs mt-0.5 text-muted-foreground"
+										:style="indexer.contrast_color ? `color: color-mix(in oklab, ${indexer.contrast_color} 70%, transparent)` : ''"
+										x-text="indexer.description"></span>
+								</span>
+								<span x-show="indexerSelection === indexer.url" x-cloak
+									class="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center"
+									:style="`background-color: color-mix(in oklab, ${indexer.contrast_color} 20%, transparent)`">
+									<svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+										:style="`color: ${indexer.contrast_color}`" stroke-width="3">
+										<path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+									</svg>
+								</span>
+							</button>
+						</template>
+						<button
+							type="button"
+							class="w-full flex items-center gap-3 p-4 rounded-xl border-2 border-border transition-all duration-200 text-left"
+							:class="indexerSelection === '__custom__' ? 'bg-card' : 'bg-transparent hover:bg-secondary/50'"
+							:style="indexerSelection === '__custom__' ? 'transform: scale(1.03)' : ''"
+							@click={ `indexerSelection = '__custom__'; $nextTick(() => $refs.customIndexer?.focus())` }
+							:aria-pressed="indexerSelection === '__custom__'"
+						>
+							<div class="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 bg-secondary">
+								<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+									<path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+									<path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+								</svg>
+							</div>
+							<span class="flex-1">
+								<span class="block text-sm font-medium font-body text-foreground">Custom</span>
+							</span>
+						</button>
+						<div x-show="indexerSelection === '__custom__'" x-collapse>
+							@components.FormRow("Custom indexer URL", "sia-custom-indexer", "https:// will be added automatically if omitted") {
+								<input type="text" id="sia-custom-indexer" x-ref="customIndexer" x-model="customIndexer" class="form-input" placeholder="sia.example.com"/>
 							}
 						</div>
 					</div>
-					<button type="button" @click="connectToSia()" :disabled="loading" class="btn-full">
-						<span x-show="!loading">Connect to Sia</span>
-						<span x-show="loading" aria-live="polite">Connecting...</span>
-					</button>
+					@components.LoadingButton("Connect to Sia", components.LoadingButtonOpts{
+						OnClick:      "connectToSia()",
+						LoadingProp:  "loading",
+						LoadingLabel: "Connecting...",
+					})
 				</div>
 				<!-- 1b: Waiting for approval -->
 				<div x-show="siaStep === 'waiting'">
 					<h2 class="step-heading">Approve Connection</h2>
 					<p class="step-desc">A new window has opened for you to approve this application on the Sia portal. Waiting for approval.</p>
-					<div class="flex items-center justify-center space-x-2 text-muted-foreground" aria-live="polite" role="status">
-						@Spinner()
+					<div class="flex items-center justify-center space-x-2 text-muted-foreground mb-6" aria-live="polite" role="status">
+						@components.Spinner()
 						<span class="font-body">Waiting for approval...</span>
 					</div>
+					<button type="button" @click="cancelConnection()" class="btn-secondary w-full">
+						Cancel and go back
+					</button>
 				</div>
 				<!-- 1c: Recovery Key -->
 				<div x-show="siaStep === 'recovery'">
 					<h2 class="step-heading">Back up your Recovery Key</h2>
-					<p class="step-desc">This Recovery Key is the only way to recover access to your account if this server is lost or reinstalled. We only handle messaging between people — we do not have access to your Recovery Key and cannot recover it for you.</p>
-					<div class="bg-card rounded-lg p-5 mb-5 border border-border">
-						<div class="grid grid-cols-3 gap-x-4 gap-y-3 font-display text-sm">
-							<template x-for="(word, i) in recoveryPhrase.split(' ')" :key="i">
-								<div class="flex items-center py-1">
-									<span class="text-muted-foreground text-xs tabular-nums select-none w-6 shrink-0" x-text="String(i+1).padStart(2, '0') + '.'"></span>
-									<span class="text-foreground ml-2" x-text="word"></span>
+					<p class="step-desc">This Recovery Key is the only way to recover access to your account if this server is lost or reinstalled. Write it down and store it somewhere safe; we cannot recover it for you.</p>
+
+					<!-- Accordion: Use Generated / Use My Own -->
+					<div class="space-y-2 mb-4">
+						<!-- Option 1: Use Generated (default) -->
+						<div class="rounded-lg border border-border overflow-hidden">
+							<button
+								type="button"
+								class="w-full flex items-center justify-between p-3 text-left hover:bg-secondary/50 transition-colors"
+								@click={ `seedMode = 'generated'` }
+								:aria-expanded={ `seedMode === 'generated'` }
+							>
+								<span class="flex items-center gap-2">
+									<input type="radio" :checked="seedMode === 'generated'" class="rounded-full border-border" aria-label="Use generated recovery key" readonly/>
+									<span class="text-sm font-medium font-body">Use generated key</span>
+								</span>
+								<span class="text-xs text-muted-foreground">Recommended</span>
+							</button>
+							<div x-show="seedMode === 'generated'" x-collapse>
+								<div class="p-4 pt-0">
+									<div class="bg-card rounded-lg p-5 mb-4 border border-border">
+										<div class="grid grid-cols-3 gap-x-4 gap-y-3 font-display text-sm">
+											<template x-for="(word, i) in recoveryPhrase.split(' ')" :key="i">
+												<div class="flex items-center py-1">
+													<span class="text-muted-foreground text-xs tabular-nums select-none w-6 shrink-0" x-text="String(i+1).padStart(2, '0') + '.'"></span>
+													<span class="text-foreground ml-2" x-text="word"></span>
+												</div>
+											</template>
+										</div>
+									</div>
+									<div class="flex items-center gap-2 mb-3">
+										<button
+											type="button"
+											class="btn-secondary text-sm"
+											@click={ `window.__copyToClipboard(recoveryPhrase, 'Copied recovery key').then(() => $dispatch('copied-key'))` }
+										>Copy Recovery Key</button>
+										<span class="text-xs text-muted-foreground font-body" x-show="phraseCopied" x-cloak>Copied to clipboard</span>
+									</div>
+									@components.Toggle("phraseSaved", "I have saved my Recovery Key")
 								</div>
-							</template>
+							</div>
+						</div>
+
+						<!-- Option 2: Use My Own -->
+						<div class="rounded-lg border border-border overflow-hidden">
+							<button
+								type="button"
+								class="w-full flex items-center justify-between p-3 text-left hover:bg-secondary/50 transition-colors"
+								@click={ `seedMode = 'custom'; $nextTick(() => $refs.customSeed?.focus())` }
+								:aria-expanded={ `seedMode === 'custom'` }
+							>
+								<span class="flex items-center gap-2">
+									<input type="radio" :checked="seedMode === 'custom'" class="rounded-full border-border" aria-label="Use my own recovery key" readonly/>
+									<span class="text-sm font-medium font-body">Use my own key</span>
+								</span>
+								<span class="text-xs text-muted-foreground">Restore existing account</span>
+							</button>
+							<div x-show="seedMode === 'custom'" x-collapse>
+								<div class="p-4 pt-0">
+									@components.FormRow("Recovery Key", "custom-seed-input", "Enter your 12-word Recovery Key exactly as it was shown to you") {
+										<textarea
+											x-ref="customSeed"
+											x-model="customSeedInput"
+											@input={ `validateCustomSeed()` }
+											class="form-input font-mono text-sm"
+											rows="3"
+											placeholder="word1 word2 word3 ... word12"
+											:disabled="loading"
+										></textarea>
+									}
+									<p x-show="customSeedError" x-cloak class="text-xs text-destructive font-body mt-1" x-text="customSeedError"></p>
+									<p class="text-xs text-muted-foreground font-body mt-1">Make sure you've written down all 12 words in the correct order before continuing.</p>
+								</div>
+							</div>
 						</div>
 					</div>
-					<div class="flex items-center gap-2 mb-5">
-						<button
-							type="button"
-							class="btn-secondary text-sm px-3 py-1.5"
-							@click="navigator.clipboard.writeText(recoveryPhrase).then(() => $dispatch('copied-key'))"
-						>Copy Recovery Key</button>
-						<span class="text-xs text-muted-foreground font-body" x-show="phraseCopied" x-cloak>Copied to clipboard</span>
-					</div>
-					@Toggle("phraseSaved", "I have saved my Recovery Key")
+
 					<div class="flex items-center gap-2 mt-6">
-						<button type="button" @click="phraseSaved && (showConfirmKey = true)" :disabled="!phraseSaved" class="btn-full">
-							<span x-show="!loading">Continue</span>
-							<span x-show="loading" aria-live="polite">Processing...</span>
-						</button>
+						@components.LoadingButton("Continue", components.LoadingButtonOpts{
+							OnClick:      `seedMode === 'custom' ? validateCustomSeed() && continueWithSeed() : phraseSaved && (showConfirmKey = true)`,
+							LoadingProp:  `loading`,
+							Disabled:     `loading || (seedMode === 'generated' ? !phraseSaved : !customSeedInput.trim())`,
+							LoadingLabel: "Processing...",
+						})
 					</div>
-					@Dialog("showConfirmKey", "Confirm your Recovery Key", "Make sure you've written down all 12 words in the correct order before continuing. You won't be able to see them again.", "I've saved it", "btn-primary")
+					@components.Dialog("showConfirmKey", "Confirm your Recovery Key", "Make sure you've written down all 12 words in the correct order before continuing. You won't be able to see them again.", "I've saved it", "btn-primary")
 				</div>
 			</div>
 			<!-- Step 2: Finish Setup -->
@@ -123,16 +244,17 @@ templ OnboardingContent(csrfToken string, publicKey string) {
 					<div class="space-y-4">
 						<h2 class="step-heading">Finish Setup</h2>
 						<p class="step-desc">Your admin password is set. Click below to generate your S3 access key and secret key to finish setup.</p>
-						<button @click="finishSetup()" :disabled="loading" class="btn-full">
-							<span x-show="!loading">Generate S3 Keys & Finish</span>
-							<span x-show="loading" aria-live="polite">Processing...</span>
-						</button>
+						@components.LoadingButton("Generate S3 Keys & Finish", components.LoadingButtonOpts{
+							OnClick:      "finishSetup()",
+							LoadingProp:  "loading",
+							LoadingLabel: "Processing...",
+						})
 					</div>
 				</template>
 				<template x-if="generatedCredentials.accessKey">
 					<div class="space-y-4">
 						<h2 class="step-heading text-primary!">Setup Complete!</h2>
-						<p class="step-desc">Save these credentials — you'll need them to access your S3 storage.</p>
+						<p class="step-desc">Save these credentials; you'll need them to access your S3 storage.</p>
 						<div class="border border-border rounded-lg overflow-hidden">
 							<div class="card-header flex items-center justify-between">
 								<h3 class="font-bold font-display text-foreground">Admin Credentials</h3>
@@ -173,11 +295,11 @@ templ OnboardingContent(csrfToken string, publicKey string) {
 					</div>
 				</template>
 			</div>
-			<!-- Reset onboarding — start over -->
+			<!-- Reset onboarding: start over -->
 			<div class="mt-6 text-center" x-show="currentStep > 0" x-cloak>
 				<button
 					type="button"
-					class="btn-danger text-sm px-4 py-2 inline-flex items-center gap-1.5"
+					class="btn-danger text-sm inline-flex items-center gap-1.5"
 					@click="if (confirm('Start over? This will reset your admin password and clear your onboarding progress.')) resetOnboarding()"
 				>
 					<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>
