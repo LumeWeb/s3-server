@@ -8,7 +8,7 @@ templ Onboarding(csrfToken string, publicKey string) {
 
 templ OnboardingContent(csrfToken string, publicKey string) {
 	<div class="flex items-center justify-center min-h-screen" x-data="onboardingWizard" x-cloak data-onboarding>
-		<div class="card w-full max-w-lg p-8">
+		<div class="card w-full max-w-lg p-6 sm:p-8 mx-4">
 			@components.LogoTitle("S3 Setup", true)
 			<!-- Step indicators -->
 			<div class="flex items-center justify-center mb-8">
@@ -156,7 +156,7 @@ templ OnboardingContent(csrfToken string, publicKey string) {
 						@components.Spinner()
 						<span class="font-body">Waiting for approval...</span>
 					</div>
-					<button type="button" @click="cancelConnection()" class="btn-secondary w-full">
+					<button type="button" @click="cancelConnection()" class={ components.Cls("btn-secondary", "w-full", "btn-size-default") }>
 						Cancel and go back
 					</button>
 				</div>
@@ -195,10 +195,10 @@ templ OnboardingContent(csrfToken string, publicKey string) {
 									<div class="flex items-center gap-2 mb-3">
 										<button
 											type="button"
-											class="btn-secondary text-sm"
+											class={ components.Cls("btn-secondary", "btn-size-default") }
 											@click={ `window.__copyToClipboard(recoveryPhrase, 'Copied recovery key').then(() => $dispatch('copied-key'))` }
 										>Copy Recovery Key</button>
-										<span class="text-xs text-muted-foreground font-body" x-show="phraseCopied" x-cloak>Copied to clipboard</span>
+										<span class="meta-text" x-show="phraseCopied" x-cloak>Copied to clipboard</span>
 									</div>
 									@components.Toggle("phraseSaved", "I have saved my Recovery Key")
 								</div>
@@ -232,7 +232,7 @@ templ OnboardingContent(csrfToken string, publicKey string) {
 										></textarea>
 									}
 									<p x-show="customSeedError" x-cloak class="text-xs text-destructive font-body mt-1" x-text="customSeedError"></p>
-									<p class="text-xs text-muted-foreground font-body mt-1">Make sure you've written down all 12 words in the correct order before continuing.</p>
+									<p class={ components.Cls("meta-text", "mt-1") }>Make sure you've written down all 12 words in the correct order before continuing.</p>
 								</div>
 							</div>
 						</div>
@@ -267,7 +267,7 @@ templ OnboardingContent(csrfToken string, publicKey string) {
 						<p class="step-desc">Save these credentials; you'll need them to access your S3 storage.</p>
 						<div class="border border-border rounded-lg overflow-hidden">
 							<div class="card-header flex items-center justify-between">
-								<h3 class="font-bold font-display text-foreground">Admin Credentials</h3>
+								<h3 class="section-title">Admin Credentials</h3>
 								<button type="button" @click="copyAllCredentials()" class="btn-link" aria-label="Copy all credentials to clipboard">Copy All</button>
 							</div>
 							<div class="p-4 space-y-4">
@@ -309,7 +309,7 @@ templ OnboardingContent(csrfToken string, publicKey string) {
 			<div class="mt-6 text-center" x-show="currentStep > 0" x-cloak>
 				<button
 					type="button"
-					class="btn-danger text-sm inline-flex items-center gap-1.5"
+					class={ components.Cls("btn-danger", "btn-size-default", "gap-1.5") }
 					@click="if (confirm('Start over? This will reset your admin password and clear your onboarding progress.')) resetOnboarding()"
 				>
 					<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>

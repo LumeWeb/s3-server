@@ -14,8 +14,8 @@ templ KeysContent(groups []UserKeyGroup, csrfToken string, backendRunning bool) 
 	<div class="max-w-5xl mx-auto px-4 py-6 space-y-6" x-data={ fmt.Sprintf("keysApp({ backendRunning: %t })", backendRunning) } @dialog-confirm.window="$event.detail?.source === 'showDelete' && confirmDelete()">
 		<div class="card">
 			<div class="card-header">
-				<h2 class="font-bold font-display text-foreground">Access Keys</h2>
-				<p class="text-xs text-muted-foreground font-body mt-0.5">S3 credentials for programmatic access, grouped by user</p>
+				<h2 class="section-title">Access Keys</h2>
+				<p class={ components.Cls("meta-text", "mt-0.5") }>S3 credentials for programmatic access, grouped by user</p>
 			</div>
 			<div id="keys-list" class="divide-y divide-surface-border">
 				@KeyList(groups, true, backendRunning)
@@ -49,7 +49,7 @@ templ UserKeySection(g UserKeyGroup, showGenerate bool, backendRunning bool) {
 			if showGenerate {
 				@components.Button("+ Generate Key", components.ButtonOpts{
 					Type:         "button",
-					Class:        "btn-primary text-xs px-3 py-1",
+					Class:        components.Cls("btn-primary", "btn-size-default"),
 					OnClick:      fmt.Sprintf("generateKey('%s')", components.JsEscape(g.UserName)),
 					LoadingProp:  fmt.Sprintf("generating['%s']", components.JsEscape(g.UserName)),
 					LoadingLabel: "Generating…",
@@ -58,7 +58,7 @@ templ UserKeySection(g UserKeyGroup, showGenerate bool, backendRunning bool) {
 			}
 		</div>
 		if len(g.Keys) == 0 {
-			<p class="text-xs text-muted-foreground font-body py-2">No access keys yet.</p>
+			<p class={ components.Cls("meta-text", "py-2") }>No access keys yet.</p>
 		} else {
 			<div class="space-y-1">
 				for _, kp := range g.Keys {

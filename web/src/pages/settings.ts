@@ -263,6 +263,7 @@ export function versionCheckApp(this: any) {
 export function navFlushApp(this: any) {
   return {
     showFlush: false,
+    navOpen: false,
 
     async confirmFlush() {
       try {

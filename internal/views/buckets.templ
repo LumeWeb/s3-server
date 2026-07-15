@@ -26,12 +26,12 @@ templ BucketsContent(buckets []BucketInfo, users []string, csrfToken string) {
 		<div class="card">
 			<div class="card-header flex items-center justify-between">
 				<div>
-					<h2 class="font-bold font-display text-foreground">Buckets</h2>
-					<p class="text-xs text-muted-foreground font-body mt-0.5">Each bucket belongs to a user. All access keys under that user share access to their buckets.</p>
+					<h2 class="section-title">Buckets</h2>
+					<p class={ components.Cls("meta-text", "mt-0.5") }>Each bucket belongs to a user. All access keys under that user share access to their buckets.</p>
 				</div>
 				<button
 					type="button"
-					class="btn-primary text-sm px-3 py-1.5 whitespace-nowrap"
+					class={ components.Cls("btn-primary", "btn-size-default", "whitespace-nowrap") }
 					@click="showCreate = true"
 				>
 					+ Create Bucket
@@ -111,13 +111,13 @@ templ LifecycleModal() {
 
 templ lifecycleModalBody() {
 	<div class="p-4 space-y-4">
-		<div x-show="lifecycleLoading" x-cloak class="text-sm text-muted-foreground font-body">Loading…</div>
+		<div x-show="lifecycleLoading" x-cloak class="form-hint">Loading…</div>
 		<div x-show="lifecycleErr" x-cloak class="error-msg" x-text="lifecycleErr"></div>
 		<template x-if="!lifecycleLoading && !lifecycleErr">
 			<div class="space-y-3">
 				<template x-for="(rule, i) in lifecycleRules" :key="i">
-					<div class="flex items-end gap-2 p-3 border border-surface-border rounded-lg">
-						<div class="flex-1">
+					<div class="flex flex-col sm:flex-row sm:items-end gap-2 p-3 border border-surface-border rounded-lg">
+						<div class="flex-1 w-full sm:w-auto">
 							<label class="form-label">Prefix</label>
 							<input
 								type="text"
@@ -127,7 +127,7 @@ templ lifecycleModalBody() {
 								autocomplete="off"
 							/>
 						</div>
-						<div class="w-32">
+						<div class="w-full sm:w-32">
 							<label class="form-label">Expire (days)</label>
 							<input
 								type="number"
@@ -137,7 +137,7 @@ templ lifecycleModalBody() {
 								class="form-input"
 							/>
 						</div>
-						<div class="w-28">
+						<div class="w-full sm:w-28">
 							<label class="form-label">Status</label>
 							@components.Select("", components.SelectOpts{
 								Model: "rule.status",
@@ -159,17 +159,17 @@ templ lifecycleModalBody() {
 				<div x-show="lifecycleRules.length === 0" class="py-4 space-y-6 text-center">
 					<div class="border border-surface-border rounded-lg p-4 space-y-2 text-left max-w-md mx-auto">
 						<p class="text-sm text-foreground font-medium font-body">How lifecycle rules work</p>
-						<p class="text-xs text-muted-foreground font-body">Rules automatically expire objects after a set number of days.</p>
+						<p class="meta-text">Rules automatically expire objects after a set number of days.</p>
 						<div class="space-y-1.5 pt-1">
-							<p class="text-xs text-muted-foreground font-body"><span class="text-foreground font-medium">Prefix</span>: optional, limits the rule to objects with this path (e.g. <code class="text-primary">logs/</code>).</p>
-							<p class="text-xs text-muted-foreground font-body"><span class="text-foreground font-medium">Expire (days)</span>: matching objects are deleted after this many days.</p>
-							<p class="text-xs text-muted-foreground font-body"><span class="text-foreground font-medium">Status</span>: disable a rule without deleting it.</p>
+							<p class="meta-text"><span class="text-foreground font-medium">Prefix</span>: optional, limits the rule to objects with this path (e.g. <code class="text-primary">logs/</code>).</p>
+							<p class="meta-text"><span class="text-foreground font-medium">Expire (days)</span>: matching objects are deleted after this many days.</p>
+							<p class="meta-text"><span class="text-foreground font-medium">Status</span>: disable a rule without deleting it.</p>
 						</div>
 					</div>
-					<p class="text-sm text-muted-foreground font-body pt-2">No lifecycle rules configured.</p>
+					<p class={ components.Cls("form-hint", "pt-2") }>No lifecycle rules configured.</p>
 					<button
 						type="button"
-						class="btn-primary text-xs px-3 py-1.5"
+						class={ components.Cls("btn-primary", "btn-size-sm") }
 						@click="lifecycleRules.push({ prefix: '', expiration_days: 30, status: 'Enabled' })"
 					>
 						+ Add Rule
@@ -179,7 +179,7 @@ templ lifecycleModalBody() {
 					x-show="lifecycleRules.length > 0"
 					x-cloak
 					type="button"
-					class="btn-ghost text-xs px-3 py-1.5 mt-2"
+					class={ components.Cls("btn-ghost", "btn-size-sm", "mt-2") }
 					@click="lifecycleRules.push({ prefix: '', expiration_days: 30, status: 'Enabled' })"
 				>
 					+ Add Rule
@@ -199,8 +199,8 @@ templ lifecycleModalBody() {
 			Delete All
 		</button>
 		<div class="flex justify-end gap-3">
-			<button type="button" class="btn-ghost text-sm px-3 py-2" @click="showLifecycle = false">Cancel</button>
-			@components.Button("Save", components.ButtonOpts{Type: "button", Class: "btn-primary text-sm px-4 py-2", OnClick: "saveLifecycle()", LoadingProp: "lifecycleSaving", LoadingLabel: "Saving…", Disabled: "lifecycleSaving", Extra: templ.Attributes{"x-show": "!lifecycleLoading && !lifecycleErr", "x-cloak": ""}})
+			<button type="button" class={ components.Cls("btn-ghost", "btn-size-sm") } @click="showLifecycle = false">Cancel</button>
+			@components.Button("Save", components.ButtonOpts{Type: "button", Class: components.Cls("btn-primary", "btn-size-default"), OnClick: "saveLifecycle()", LoadingProp: "lifecycleSaving", LoadingLabel: "Saving…", Disabled: "lifecycleSaving", Extra: templ.Attributes{"x-show": "!lifecycleLoading && !lifecycleErr", "x-cloak": ""}})
 		</div>
 	</div>
 }

@@ -15,7 +15,7 @@ templ DashboardContent(version string, groups []UserKeyGroup, userCount int, buc
 			<div class="stat-card">
 				<div class="flex items-center gap-2">
 					<div class="h-2 w-2 rounded-full" :class="isRunning ? 'bg-primary' : 'bg-destructive'"></div>
-					<div class="text-sm text-muted-foreground font-body">S3 Backend</div>
+					<div class="form-hint">S3 Backend</div>
 				</div>
 				<div class="text-xl font-bold font-display mt-1" :class="isRunning ? 'text-primary' : 'text-destructive'" x-text="isRunning ? 'Running' : 'Stopped'"></div>
 				<template x-if="initError">
@@ -25,16 +25,16 @@ templ DashboardContent(version string, groups []UserKeyGroup, userCount int, buc
 			<div class="stat-card">
 				<div class="flex items-center justify-around divide-x divide-surface-border">
 					<div class="text-center px-2">
-						<div class="text-xl font-bold font-display text-foreground">{ fmt.Sprintf("%d", userCount) }</div>
-						<div class="text-xs text-muted-foreground font-body mt-0.5">Users</div>
+						<div class={ components.Cls("section-title", "text-xl") }>{ fmt.Sprintf("%d", userCount) }</div>
+						<div class={ components.Cls("meta-text", "mt-0.5") }>Users</div>
 					</div>
 					<div class="text-center px-4">
-						<div class="text-xl font-bold font-display text-foreground" x-text="keyCount"></div>
-						<div class="text-xs text-muted-foreground font-body mt-0.5">Access Keys</div>
+						<div class={ components.Cls("section-title", "text-xl") } x-text="keyCount"></div>
+						<div class={ components.Cls("meta-text", "mt-0.5") }>Access Keys</div>
 					</div>
 					<div class="text-center px-2">
-						<div class="text-xl font-bold font-display text-foreground">{ fmt.Sprintf("%d", bucketCount) }</div>
-						<div class="text-xs text-muted-foreground font-body mt-0.5">Buckets</div>
+						<div class={ components.Cls("section-title", "text-xl") }>{ fmt.Sprintf("%d", bucketCount) }</div>
+						<div class={ components.Cls("meta-text", "mt-0.5") }>Buckets</div>
 					</div>
 				</div>
 			</div>
@@ -44,7 +44,7 @@ templ DashboardContent(version string, groups []UserKeyGroup, userCount int, buc
 				<svg class="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
 					<path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"></path>
 				</svg>
-				<p class="text-xs text-muted-foreground font-body">
+				<p class="meta-text">
 					<span class="font-medium text-foreground/70">Users</span> own access keys and buckets.
 					<span class="font-medium text-foreground/70">Access keys</span> are S3 credentials for programmatic access; all keys under a user share that user's buckets.
 					Create separate users to isolate storage between applications.
@@ -54,11 +54,11 @@ templ DashboardContent(version string, groups []UserKeyGroup, userCount int, buc
 		<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 			<div class="lg:col-span-2 card">
 				<div class="card-header flex items-center justify-between">
-					<h2 class="font-bold font-display text-foreground">Access Keys</h2>
+					<h2 class="section-title">Access Keys</h2>
 					if len(groups) <= 1 {
 						@components.Button("+ Generate Key", components.ButtonOpts{
 							Type:         "button",
-							Class:        "btn-primary text-sm px-3 py-1.5",
+							Class:        components.Cls("btn-primary", "btn-size-default"),
 							OnClick:      "generateKey()",
 							LoadingProp:  "generating",
 							LoadingLabel: "Generating…",
@@ -74,7 +74,7 @@ templ DashboardContent(version string, groups []UserKeyGroup, userCount int, buc
 			</div>
 			<div class="card">
 				<div class="card-header">
-					<h2 class="font-bold font-display text-foreground">Quick Actions</h2>
+					<h2 class="section-title">Quick Actions</h2>
 				</div>
 				<div class="p-3 space-y-1">
 					@quickAction("Create User", "/_panel/users")
@@ -93,7 +93,7 @@ templ quickAction(label string, href string) {
 		href={ templ.SafeURL(href) }
 		class="flex items-center justify-between px-3 py-2 rounded-md hover:bg-card/30 transition-colors group"
 	>
-		<span class="text-sm text-muted-foreground font-body group-hover:text-primary transition-colors">{ label }</span>
+		<span class={ components.Cls("form-hint", "group-hover:text-primary transition-colors") }>{ label }</span>
 		<svg class="h-4 w-4 text-muted-foreground/60 group-hover:text-primary transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
 			<path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5"></path>
 		</svg>

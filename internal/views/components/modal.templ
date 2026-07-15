@@ -88,19 +88,19 @@ templ ModalShell(opts ModalShellOpts, content templ.Component) {
 }
 
 templ modalCardContent(opts ModalShellOpts, content templ.Component) {
-	<div class={ "card w-full mx-4 " + maxWidth(opts.MaxWidth) + " " + opts.CardClass }>
-		<div class={ "card-header flex items-center justify-between " + stickyHeaderClass(opts.StickyHeader) }>
-			<div>
-				<h3 class="font-bold font-display text-foreground">{ opts.Title }</h3>
+	<div class={ Cls("modal-content", "mx-4", maxWidth(opts.MaxWidth), opts.CardClass) }>
+		<div class={ Cls("card-header", "flex", "items-center", "justify-between", stickyHeaderClass(opts.StickyHeader)) }>
+			<div class="min-w-0">
+				<h3 class="section-title">{ opts.Title }</h3>
 				if opts.SubtitleProp != "" {
-					<p class="text-xs text-muted-foreground font-body mt-0.5" x-text={ opts.SubtitleProp }></p>
+					<p class={ Cls("meta-text", "mt-0.5") } x-text={ opts.SubtitleProp }></p>
 				} else if opts.Subtitle != "" {
-					<p class="text-xs text-muted-foreground font-body mt-0.5">{ opts.Subtitle }</p>
+					<p class={ Cls("meta-text", "mt-0.5") }>{ opts.Subtitle }</p>
 				}
 			</div>
 			<button
 				type="button"
-				class="modal-close"
+				class={ Cls("modal-close", "btn-size-icon") }
 				@click={ opts.ShowProp + " = false" }
 			>&times;</button>
 		</div>
@@ -142,17 +142,17 @@ templ Dialog(showProp string, title string, message string, confirmText string, 
 
 templ dialogBody(showProp string, message string, confirmText string, confirmClass string) {
 	<div class="p-4">
-		<p class="text-sm text-muted-foreground font-body">{ message }</p>
+		<p class="form-hint">{ message }</p>
 	</div>
-	<div class="p-4 border-t border-border flex justify-end space-x-3">
+	<div class="p-4 border-t border-border flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:space-x-3">
 		<button
 			type="button"
-			class="btn-ghost text-sm px-4 py-2"
+			class={ Cls("btn-ghost", "btn-size-default") }
 			@click={ showProp + " = false" }
 		>Cancel</button>
 		<button
 			type="button"
-			class={ "text-sm px-4 py-2 " + confirmClass }
+			class={ Cls(confirmClass, "btn-size-default") }
 			@click={ showProp + " = false; $nextTick(() => $dispatch('dialog-confirm', { source: '" + showProp + "' }))" }
 		>{ confirmText }</button>
 	</div>
@@ -202,11 +202,11 @@ templ createDialogBody(showProp string, label string, placeholder string, hint s
 			@extraContent
 		}
 		<p x-show="createErr" x-cloak class="error-msg" x-text="createErr"></p>
-		<div class="flex justify-end gap-3 pt-2">
-			<button type="button" class="btn-ghost text-sm px-3 py-2" @click={ showProp + " = false" }>Cancel</button>
+		<div class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3 pt-2">
+			<button type="button" class={ Cls("btn-ghost", "btn-size-sm") } @click={ showProp + " = false" }>Cancel</button>
 			@Button("Create", ButtonOpts{
 				Type:         "submit",
-				Class:        "btn-primary text-sm px-4 py-2 whitespace-nowrap",
+				Class:        Cls("btn-primary", "btn-size-default", "whitespace-nowrap"),
 				LoadingProp:  "creating",
 				LoadingLabel: "Creating…",
 				Disabled:     "creating",
@@ -234,7 +234,7 @@ templ ConfirmDialog() {
 }
 
 templ confirmDialogBody() {
-	<div class="card w-full max-w-md p-6 shadow-xl">
+	<div class={ Cls("modal-content", "max-w-md", "p-6", "shadow-xl") }>
 		<div class="flex items-start gap-4">
 			<div class="flex-shrink-0 mt-0.5">
 				<svg x-show="variant === 'danger'" class="h-7 w-7 text-destructive" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
@@ -249,22 +249,22 @@ templ confirmDialogBody() {
 			</div>
 			<div class="flex-1 min-w-0">
 				<h3 id="confirm-dialog-title" class="text-lg font-bold text-foreground font-display" x-text="title || 'Confirm'"></h3>
-				<p class="mt-2 text-sm text-muted-foreground font-body break-words" x-text="message"></p>
+				<p class={ Cls("form-hint", "mt-2", "break-words") } x-text="message"></p>
 				<template x-if="detail">
-					<p class="mt-1 text-xs text-muted-foreground font-body" x-text="detail"></p>
+					<p class={ Cls("meta-text", "mt-1") } x-text="detail"></p>
 				</template>
 			</div>
 		</div>
-		<div class="mt-6 flex justify-end gap-2">
+		<div class="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-2">
 			<button
 				type="button"
-				class="btn-ghost px-4 py-2 text-sm"
+				class={ Cls("btn-ghost", "btn-size-default") }
 				@click="if (resolve) { resolve(false) }; show = false"
 			>Cancel</button>
 			<button
 				type="button"
 				:class="variant === 'danger' ? 'btn-danger' : 'btn-primary'"
-				class="px-4 py-2 text-sm"
+				class={ Cls("btn-size-default") }
 				@click="if (resolve) { resolve(true) }; show = false"
 				x-text="variant === 'danger' ? 'Delete' : 'Confirm'"
 			></button>
@@ -290,7 +290,7 @@ templ ErrorDialog() {
 }
 
 templ errorDialogBody() {
-	<div class="card w-full max-w-md p-6 shadow-xl">
+	<div class={ Cls("modal-content", "max-w-md", "p-6", "shadow-xl") }>
 		<div class="flex items-start gap-4">
 			<div class="flex-shrink-0 mt-0.5">
 				<svg class="h-7 w-7 text-destructive" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
@@ -299,16 +299,16 @@ templ errorDialogBody() {
 			</div>
 			<div class="flex-1 min-w-0">
 				<h3 id="error-dialog-title" class="text-lg font-bold text-foreground font-display" x-text="title || 'Something went wrong'"></h3>
-				<p class="mt-2 text-sm text-muted-foreground font-body break-words" x-text="message"></p>
+				<p class={ Cls("form-hint", "mt-2", "break-words") } x-text="message"></p>
 				<template x-if="detail">
 					<pre class="mt-3 text-xs text-muted-foreground bg-muted/50 rounded p-2 overflow-x-auto font-mono" x-text="detail"></pre>
 				</template>
 			</div>
 		</div>
-		<div class="mt-6 flex justify-end gap-2">
+		<div class="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-2">
 			<button
 				type="button"
-				class="btn-primary px-4 py-2 text-sm"
+				class={ Cls("btn-primary", "btn-size-default") }
 				@click="show = false"
 			>Dismiss</button>
 		</div>
