@@ -47,6 +47,7 @@ COPY --from=builder /bin/s3-server /usr/local/bin/s3-server
 # Data directory — use /data as the convention in Docker
 ENV S3_SERVER_DATA_DIR=/data
 RUN useradd -r -u 1000 -d /data -s /usr/sbin/nologin s3server
+RUN mkdir -p /data && chown 1000:1000 /data
 VOLUME /data
 
 USER 1000:1000
