@@ -159,7 +159,8 @@ ssl:
 | Flag | Env Var | Default | Description |
 |---|---|---|---|
 | `--data-dir` | `S3_SERVER_DATA_DIR` | `/var/lib/s3-server` | Data directory for panel config and S3 metadata |
-| `--listen-addr` | `S3_SERVER_LISTEN_ADDR` | `:8080` | Address to listen on |
+| `--listen-addr` | `S3_SERVER_LISTEN_ADDR` | `:8080` | Listen address. HTTPS when SSL is managed, HTTP otherwise |
+| `--http-addr` | `S3_SERVER_HTTP_ADDR` | `:80` | HTTP address for ACME challenges + HTTPS redirect (managed mode only) |
 
 ### Environment Variables
 
@@ -181,10 +182,39 @@ All config keys map to environment variables with `S3_SERVER_` prefix and `__` f
 | Mode | Description |
 |---|---|
 | `none` | No TLS (HTTP only, default) |
-| `platform` | TLS terminated by external load balancer/proxy |
-| `managed` | Automatic TLS via Let's Encrypt (ACME), HTTP on :80 redirects to HTTPS on :443 |
+| `platform` | TLS terminated by external load balancer/proxy (e.g. Caddy, Traefik, Cloudflare) |
+| `managed` | Automatic TLS via Let's Encrypt (ACME). Requires direct internet access on ports 80 + 443 for HTTP-01 challenges |
 
 When `managed` and `s3.host_bases` are configured, bucket creation triggers eager cert issuance for `{bucket}.{hostbase}`.
+
+### Managed SSL (bare-metal / no Docker)
+
+Managed SSL provisions Let's Encrypt certificates automatically. In this mode, two listeners start:
+
+- **HTTP** on `--http-addr` (default `:80`) — solves ACME HTTP-01 challenges, redirects to HTTPS
+- **HTTPS** on `--listen-addr` (default `:8080`) — serves the S3 API + panel
+
+For bare-metal deployments, set the HTTPS port to 443:
+
+```bash
+s3-server serve --listen-addr :443 --http-addr :80
+# or via env:
+S3_SERVER_LISTEN_ADDR=:443 S3_SERVER_HTTP_ADDR=:80 s3-server serve
+```
+
+**Docker users:** managed SSL is not recommended inside Docker. ACME HTTP-01 challenges require port 80 to be directly reachable, and container port mapping adds complexity. Instead, use `platform` mode and terminate TLS with your reverse proxy (Caddy, Traefik, etc.):
+
+```bash
+# docker-compose.yml
+services:
+  s3-server:
+    ports:
+      - "8080:8080"
+    environment:
+      - S3_SERVER_SSL__MODE=platform
+```
+
+The reverse proxy handles TLS termination and forwards plain HTTP to the container on `--listen-addr` (default `:8080`).
 
 ## Testing
 
