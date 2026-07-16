@@ -77,6 +77,60 @@ func TestSetupConfig_IsSubdomainMode(t *testing.T) {
 	}
 }
 
+func TestSetupConfig_HasTLS(t *testing.T) {
+	cases := []struct {
+		mode string
+		want bool
+	}{
+		{"managed", true},
+		{"platform", true},
+		{"none", false},
+		{"", false},
+	}
+	for _, tc := range cases {
+		sc := SetupConfig{SSLMode: tc.mode}
+		if got := sc.HasTLS(); got != tc.want {
+			t.Errorf("HasTLS() with SSLMode=%q = %v, want %v", tc.mode, got, tc.want)
+		}
+	}
+}
+
+func TestUseSubdomain_PlatformMode(t *testing.T) {
+	sc := SetupConfig{
+		HostBases: []string{"s3.example.com"},
+		SSLMode:   "platform",
+	}
+	if !sc.HasTLS() {
+		t.Error("HasTLS() = false for platform mode, want true")
+	}
+	if !sc.useSubdomain() {
+		t.Error("useSubdomain() = false for platform mode, want true")
+	}
+}
+
+func TestUseSubdomain_NoneMode(t *testing.T) {
+	sc := SetupConfig{
+		HostBases: []string{"s3.example.com"},
+		SSLMode:   "none",
+	}
+	if sc.HasTLS() {
+		t.Error("HasTLS() = true for none mode, want false")
+	}
+	if sc.useSubdomain() {
+		t.Error("useSubdomain() = true for none mode, want false")
+	}
+}
+
+func TestUseSubdomain_EmptySSLMode(t *testing.T) {
+	sc := SetupConfig{
+		HostBases: []string{"s3.example.com"},
+		SSLMode:   "",
+	}
+	if sc.useSubdomain() {
+		t.Error("useSubdomain() = true for empty SSL mode, want false")
+	}
+}
+
 func TestSetupConfig_IsHTTPS(t *testing.T) {
 	sc := SetupConfig{Endpoint: "https://s3.example.com"}
 	if !sc.IsHTTPS() {

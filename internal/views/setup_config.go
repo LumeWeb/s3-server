@@ -43,6 +43,12 @@ func (sc SetupConfig) HasManagedSSL() bool {
 	return sc.SSLMode == "managed"
 }
 
+// HasTLS returns true if the SSL mode provides TLS, either via built-in
+// ACME (managed) or an external reverse proxy (platform).
+func (sc SetupConfig) HasTLS() bool {
+	return sc.SSLMode == "managed" || sc.SSLMode == "platform"
+}
+
 // IsHTTPS returns true if the endpoint uses HTTPS.
 func (sc SetupConfig) IsHTTPS() bool {
 	return strings.HasPrefix(sc.Endpoint, "https://")
@@ -77,8 +83,11 @@ func (sc SetupConfig) HostBase() string {
 }
 
 // useSubdomain returns true if subdomain-style URLs should be used in configs.
+// Subdomain-style requires TLS: either managed (built-in ACME, on-demand
+// per-domain certs) or platform (external proxy terminates TLS).
+// In "none" mode there is no TLS, so subdomain-style URLs would fail.
 func (sc SetupConfig) useSubdomain() bool {
-	return sc.IsSubdomainMode() && sc.HasManagedSSL()
+	return sc.IsSubdomainMode() && sc.HasTLS()
 }
 
 // s3cmdHostBucket returns the host_bucket value for s3cmd config.
