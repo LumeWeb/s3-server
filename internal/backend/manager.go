@@ -93,8 +93,16 @@ type Manager struct {
 	cleanup     func()
 	accountCli  AccountClient
 	initError   string // non-empty when InitFromConfig failed at startup
+	starting    bool  // true while async init is in progress
+
+	// onStatusChange is called (under mu) when the status transitions.
+	// Used by the SSE broker to publish an immediate status update.
+	// Receives the current status string and initError so the callback
+	// does not need to re-acquire m.mu (which would deadlock).
+	onStatusChange func(statusStr, initErr string)
 
 	restartMu sync.Mutex // serializes concurrent Restart calls
+	initWg    sync.WaitGroup // tracks the InitFromConfigAsync goroutine
 }
 
 // NewManager creates a backend manager.
@@ -107,88 +115,197 @@ func NewManager(s store.Store, factory Factory, s3 S3Swapper, log *zap.Logger) *
 	}
 }
 
-// InitFromConfig initializes the s3d backend from an already-completed onboarding config.
-// Called at startup when onboarding is already complete.
-func (m *Manager) InitFromConfig(ctx context.Context) error {
-	s3Cfg := m.store.S3Config()
+// swapBackend tears down any existing backend via teardownBackend/closeResources,
+// then swaps in the new backend under m.mu and swaps the S3 handler outside the lock.
+func (m *Manager) swapBackend(backend Backend, sqliteStore S3DStore, cleanup func(), accountCli AccountClient, s3Handler http.Handler) {
+	oldCleanup, oldAccountCli := m.teardownBackend()
+	m.closeResources(oldCleanup, oldAccountCli)
 
-	// I/O outside the lock
-	sqliteStore, err := m.factory.OpenDatabase(s3Cfg.Directory + "/s3d.db")
-	if err != nil {
-		return fmt.Errorf("failed to open database: %w", err)
-	}
-	// I/O outside the lock
-	backend, s3Handler, cleanup, err := m.factory.Init(ctx, s3Cfg, sqliteStore)
-	if err != nil {
-		if closeErr := sqliteStore.Close(); closeErr != nil {
-			m.log.Error("failed to close database after init error", zap.Error(closeErr))
-		}
-		m.mu.Lock()
-		m.initError = userFriendlyInitError(err)
-		m.mu.Unlock()
-		return fmt.Errorf("failed to init s3d backend: %w", err)
-	}
-
-	// Build the account client alongside the backend. Non-fatal: if it
-	// fails, we log and continue with a noop client.
-	accountCli, err := newAccountClient(sqliteStore, s3Cfg, m.log)
-	if err != nil {
-		m.log.Warn("failed to create account client, using noop", zap.Error(err))
-		accountCli = NewNoopAccountClient(m.log)
-	}
-
-	// Lock only to swap pointers
 	m.mu.Lock()
 	m.backend = backend
 	m.sqliteStore = sqliteStore
 	m.cleanup = cleanup
 	m.accountCli = accountCli
-	m.initError = "" // clear on successful init
+	m.initError = ""
+	m.starting = false
+	m.notifyStatusChange()
 	m.mu.Unlock()
 
 	m.s3.Swap(s3Handler)
-	m.log.Info("s3d backend initialized from existing config")
+}
+
+// teardownBackend nils out the backend fields under m.mu and returns the
+// old cleanup and accountClient for I/O outside the lock. Used by Restart
+// and Cleanup.
+func (m *Manager) teardownBackend() (cleanup func(), accountCli AccountClient) {
+	m.mu.Lock()
+	cleanup = m.cleanup
+	accountCli = m.accountCli
+	m.cleanup = nil
+	m.sqliteStore = nil
+	m.backend = nil
+	m.accountCli = nil
+	m.mu.Unlock()
+	return
+}
+
+// closeResources runs cleanup and closes the account client outside the lock.
+func (m *Manager) closeResources(cleanup func(), accountCli AccountClient) {
+	if cleanup != nil {
+		cleanup()
+	}
+	if accountCli != nil {
+		if err := accountCli.Close(); err != nil {
+			m.log.Error("failed to close account client", zap.Error(err))
+		}
+	}
+}
+
+// initResult holds the output of initCore.
+type initResult struct {
+	backend    Backend
+	s3Handler  http.Handler
+	cleanup    func()
+	accountCli AccountClient
+}
+
+// initCore validates the store, calls factory.Init, and builds the account
+// client. Does not close the store or call failInit — the caller owns both.
+func (m *Manager) initCore(ctx context.Context, sqliteStore S3DStore, s3Cfg config.S3Config, preValidate func(S3DStore) error) (initResult, error) {
+	if preValidate != nil {
+		if vErr := preValidate(sqliteStore); vErr != nil {
+			return initResult{}, vErr
+		}
+	}
+
+	backend, s3Handler, cleanup, initErr := m.factory.Init(ctx, s3Cfg, sqliteStore)
+	if initErr != nil {
+		return initResult{}, initErr
+	}
+
+	accountCli, acctErr := newAccountClient(sqliteStore, s3Cfg, m.log)
+	if acctErr != nil {
+		m.log.Warn("failed to create account client, using noop", zap.Error(acctErr))
+		accountCli = NewNoopAccountClient(m.log)
+	}
+
+	return initResult{
+		backend:    backend,
+		s3Handler:  s3Handler,
+		cleanup:    cleanup,
+		accountCli: accountCli,
+	}, nil
+}
+
+// closeStore ignores close errors but logs them. Used by withStore on
+// error paths where the store must be released but the error is
+// secondary to the init failure.
+func (m *Manager) closeStore(store S3DStore, reason string) {
+	if store == nil {
+		return
+	}
+	if err := store.Close(); err != nil {
+		m.log.Error("failed to close database "+reason, zap.Error(err))
+	}
+}
+
+// withStore owns the store lifecycle for all init paths. It opens the store
+// via openStore, runs initCore, and transfers ownership to swapBackend on
+// success. On error or panic it closes the store and calls failInit with
+// the provided onFailure callback.
+func (m *Manager) withStore(
+	ctx context.Context,
+	openStore func() (S3DStore, error),
+	s3Cfg config.S3Config,
+	preValidate func(S3DStore) error,
+	onFailure func(),
+) (retErr error) {
+	var sqliteStore S3DStore
+
+	// Registered before openStore so panics during open are caught.
+	defer func() {
+		if r := recover(); r != nil {
+			m.closeStore(sqliteStore, "after panic")
+			m.failInit(fmt.Sprintf("panic in backend init: %v", r), onFailure)
+			panic(r)
+		}
+	}()
+
+	sqliteStore, retErr = openStore()
+	if retErr != nil {
+		m.failInit(userFriendlyInitError(retErr), onFailure)
+		return retErr
+	}
+
+	// Context may have been cancelled while we waited for the lock.
+	// Don't fire onFailure — a shutdown cancellation is not a genuine
+	// init failure that warrants resetting onboarding state.
+	if ctx.Err() != nil {
+		m.closeStore(sqliteStore, "on context cancel")
+		m.failInit("backend init cancelled", nil)
+		return ctx.Err()
+	}
+
+	result, initErr := m.initCore(ctx, sqliteStore, s3Cfg, preValidate)
+	if initErr != nil {
+		m.closeStore(sqliteStore, "after init error")
+		retErr = initErr
+		m.failInit(userFriendlyInitError(retErr), onFailure)
+		return retErr
+	}
+
+	// swapBackend takes ownership on success.
+	m.swapBackend(result.backend, sqliteStore, result.cleanup, result.accountCli, result.s3Handler)
 	return nil
 }
 
-// InitAfterOnboarding initializes the s3d backend after onboarding completes.
-// Called by the onboarding flow once app key + access keys are both set.
-func (m *Manager) InitAfterOnboarding(ctx context.Context, sqliteStore S3DStore) error {
-	s3Cfg := m.store.S3Config()
-
-	keys, err := sqliteStore.ListAccessKeys(nil)
+// validateAccessKeysExist is the preValidate fn for onboarding init paths.
+func validateAccessKeysExist(s S3DStore) error {
+	keys, err := s.ListAccessKeys(nil)
 	if err != nil {
 		return fmt.Errorf("failed to list access keys: %w", err)
 	}
 	if len(keys) == 0 {
 		return fmt.Errorf("no access keys")
 	}
-
-	// I/O outside the lock
-	backend, s3Handler, cleanup, err := m.factory.Init(ctx, s3Cfg, sqliteStore)
-	if err != nil {
-		return err
-	}
-
-	// Build the account client alongside the backend. Non-fatal.
-	accountCli, err := newAccountClient(sqliteStore, s3Cfg, m.log)
-	if err != nil {
-		m.log.Warn("failed to create account client, using noop", zap.Error(err))
-		accountCli = NewNoopAccountClient(m.log)
-	}
-
-	// Lock only to swap pointers
-	m.mu.Lock()
-	m.backend = backend
-	m.sqliteStore = sqliteStore
-	m.cleanup = cleanup
-	m.accountCli = accountCli
-	m.initError = "" // clear any stale error from a previous failed init
-	m.mu.Unlock()
-
-	m.s3.Swap(s3Handler)
-	m.log.Info("s3d backend initialized")
 	return nil
+}
+
+// InitFromConfig initializes the s3d backend from an already-completed
+// onboarding config. Called at startup when onboarding is already complete.
+func (m *Manager) InitFromConfig(ctx context.Context) error {
+	m.restartMu.Lock()
+	defer m.restartMu.Unlock()
+
+	s3Cfg := m.store.S3Config()
+	return m.withStore(ctx, func() (S3DStore, error) {
+		return m.factory.OpenDatabase(s3Cfg.Directory + "/s3d.db")
+	}, s3Cfg, nil, nil)
+}
+
+// InitAfterOnboarding initializes the s3d backend after onboarding completes.
+// Called by the onboarding flow once app key + access keys are both set.
+func (m *Manager) InitAfterOnboarding(ctx context.Context, sqliteStore S3DStore) error {
+	m.restartMu.Lock()
+	defer m.restartMu.Unlock()
+
+	s3Cfg := m.store.S3Config()
+	return m.withStore(ctx, func() (S3DStore, error) {
+		return sqliteStore, nil
+	}, s3Cfg, validateAccessKeysExist, nil)
+}
+
+// failInit sets the error state, notifies SSE, and fires the onFailure
+// callback. The caller owns the callback — no shared Manager state.
+func (m *Manager) failInit(initErr string, onFailure func()) {
+	m.mu.Lock()
+	m.starting = false
+	m.initError = initErr
+	m.notifyStatusChange()
+	m.mu.Unlock()
+	if onFailure != nil {
+		onFailure()
+	}
 }
 
 // OpenDatabase opens the s3d SQLite database. Used by onboarding to store the app key.
@@ -241,25 +358,12 @@ func (m *Manager) KeyStore() S3DStore {
 }
 
 // Cleanup shuts down the s3d backend. Called on server shutdown.
+// Waits for any in-flight async init goroutine to finish before
+// tearing down resources.
 func (m *Manager) Cleanup() {
-	m.mu.Lock()
-	cleanup := m.cleanup
-	accountCli := m.accountCli
-	m.cleanup = nil
-	m.sqliteStore = nil
-	m.backend = nil
-	m.accountCli = nil
-	m.mu.Unlock()
-
-	// I/O outside the lock: cleanup closure already closes the sqlite store
-	if cleanup != nil {
-		cleanup()
-	}
-	if accountCli != nil {
-		if err := accountCli.Close(); err != nil {
-			m.log.Error("failed to close account client", zap.Error(err))
-		}
-	}
+	m.initWg.Wait()
+	cleanup, accountCli := m.teardownBackend()
+	m.closeResources(cleanup, accountCli)
 }
 
 // Restart tears down the running backend and re-initializes it from the current config.
@@ -270,71 +374,21 @@ func (m *Manager) Restart(ctx context.Context) error {
 
 	m.log.Info("restarting s3d backend")
 
-	// Grab current resources under lock, nil out the fields
-	m.mu.Lock()
-	cleanup := m.cleanup
-	oldAccountCli := m.accountCli
-	m.cleanup = nil
-	m.sqliteStore = nil
-	m.backend = nil
-	m.accountCli = nil
-	m.mu.Unlock()
+	cleanup, oldAccountCli := m.teardownBackend()
+	m.closeResources(cleanup, oldAccountCli)
 
-	// I/O outside the lock: cleanup closure already closes the sqlite store
-	if cleanup != nil {
-		cleanup()
-	}
-	if oldAccountCli != nil {
-		if err := oldAccountCli.Close(); err != nil {
-			m.log.Error("failed to close account client during restart", zap.Error(err))
-		}
-	}
-
-	// Swap S3 handler to 503 placeholder during restart
 	m.s3.Swap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		w.Write([]byte("s3-server restarting...")) //nolint:errcheck
 	}))
 
-	// I/O outside the lock: re-initialize
 	s3Cfg := m.store.S3Config()
-
-	newSqliteStore, err := m.factory.OpenDatabase(s3Cfg.Directory + "/s3d.db")
+	err := m.withStore(ctx, func() (S3DStore, error) {
+		return m.factory.OpenDatabase(s3Cfg.Directory + "/s3d.db")
+	}, s3Cfg, nil, nil)
 	if err != nil {
-		m.mu.Lock()
-		m.initError = userFriendlyInitError(err)
-		m.mu.Unlock()
-		return fmt.Errorf("failed to restart backend: failed to open database: %w", err)
-	}
-
-	backend, s3Handler, newCleanup, err := m.factory.Init(ctx, s3Cfg, newSqliteStore)
-	if err != nil {
-		if closeErr := newSqliteStore.Close(); closeErr != nil {
-			m.log.Error("failed to close database after restart init error", zap.Error(closeErr))
-		}
-		m.mu.Lock()
-		m.initError = userFriendlyInitError(err)
-		m.mu.Unlock()
 		return fmt.Errorf("failed to restart backend: %w", err)
 	}
-
-	// Rebuild the account client with the new store.
-	accountCli, err := newAccountClient(newSqliteStore, s3Cfg, m.log)
-	if err != nil {
-		m.log.Warn("failed to create account client during restart, using noop", zap.Error(err))
-		accountCli = NewNoopAccountClient(m.log)
-	}
-
-	// Lock only to swap pointers
-	m.mu.Lock()
-	m.backend = backend
-	m.sqliteStore = newSqliteStore
-	m.cleanup = newCleanup
-	m.accountCli = accountCli
-	m.initError = "" // clear any stale error from a previous failed init
-	m.mu.Unlock()
-
-	m.s3.Swap(s3Handler)
 	m.log.Info("s3d backend restarted")
 	return nil
 }
@@ -346,17 +400,26 @@ func (m *Manager) Backend() Backend {
 	return m.backend
 }
 
+// currentStatus derives the backend status from the current field values.
+// Caller must hold m.mu.
+func (m *Manager) currentStatus() status.Status {
+	switch {
+	case m.backend != nil:
+		return status.Running
+	case m.initError != "":
+		return status.Error
+	case m.starting:
+		return status.Starting
+	default:
+		return status.Stopped
+	}
+}
+
 // Status returns the current backend status.
 func (m *Manager) Status() status.Status {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	if m.backend != nil {
-		return status.Running
-	}
-	if m.initError != "" {
-		return status.Error
-	}
-	return status.Stopped
+	return m.currentStatus()
 }
 
 // InitError returns the error message from a failed InitFromConfig, or empty.
@@ -364,6 +427,90 @@ func (m *Manager) InitError() string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.initError
+}
+
+// SetOnStatusChange sets a callback invoked whenever the backend status
+// transitions (e.g. stopped -> starting -> running). The SSE broker uses
+// this to push an immediate dashboard event instead of waiting for the
+// next status tick.
+func (m *Manager) SetOnStatusChange(fn func(statusStr, initErr string)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.onStatusChange = fn
+}
+
+// notifyStatusChange invokes onStatusChange outside m.mu to avoid deadlock
+// if the callback re-enters the manager. Must be called with m.mu held.
+func (m *Manager) notifyStatusChange() {
+	if m.onStatusChange == nil {
+		return
+	}
+	statusStr := m.currentStatus().String()
+	initErr := m.initError
+	callback := m.onStatusChange
+	m.mu.Unlock()
+	callback(statusStr, initErr)
+	m.mu.Lock()
+}
+
+// runAsyncInit launches doInit in a goroutine. Sets up starting state,
+// initWg tracking, restartMu serialization, context cancellation, and
+// a panic safety net. doInit receives onFailure to thread through to
+// withStore/failInit — no shared callback state on the Manager.
+func (m *Manager) runAsyncInit(ctx context.Context, onFailure func(), doInit func(context.Context, func()) error) {
+	m.mu.Lock()
+	m.starting = true
+	m.initError = ""
+	m.initWg.Add(1) // track goroutine before releasing lock — Cleanup() may
+	// observe a zero WaitGroup and return immediately if Add is called after Unlock.
+	m.notifyStatusChange()
+	m.mu.Unlock()
+
+	go func() {
+		defer m.initWg.Done()
+		defer func() {
+			if r := recover(); r != nil {
+				m.log.Error("panic recovered in async init", zap.Any("panic", r))
+				m.mu.Lock()
+				stillStarting := m.starting
+				m.mu.Unlock()
+				if stillStarting {
+					m.failInit(fmt.Sprintf("panic in async init: %v", r), onFailure)
+				}
+			}
+		}()
+
+		m.restartMu.Lock()
+		defer m.restartMu.Unlock()
+
+		if err := doInit(ctx, onFailure); err != nil {
+			m.log.Error("async init failed", zap.Error(err))
+		} else {
+			m.log.Info("async init succeeded")
+		}
+	}()
+}
+
+// InitFromConfigAsync starts InitFromConfig in a background goroutine.
+// The HTTP server can start immediately while the backend initializes.
+func (m *Manager) InitFromConfigAsync(ctx context.Context, onFailure func()) {
+	m.runAsyncInit(ctx, onFailure, func(ctx context.Context, onFailure func()) error {
+		s3Cfg := m.store.S3Config()
+		return m.withStore(ctx, func() (S3DStore, error) {
+			return m.factory.OpenDatabase(s3Cfg.Directory + "/s3d.db")
+		}, s3Cfg, nil, onFailure)
+	})
+}
+
+// InitAfterOnboardingAsync launches InitAfterOnboarding in a background
+// goroutine with the same lifecycle guarantees.
+func (m *Manager) InitAfterOnboardingAsync(ctx context.Context, sqliteStore S3DStore, onFailure func()) {
+	m.runAsyncInit(ctx, onFailure, func(ctx context.Context, onFailure func()) error {
+		s3Cfg := m.store.S3Config()
+		return m.withStore(ctx, func() (S3DStore, error) {
+			return sqliteStore, nil
+		}, s3Cfg, validateAccessKeysExist, onFailure)
+	})
 }
 
 // userFriendlyInitError translates internal init errors into messages

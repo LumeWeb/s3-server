@@ -1,32 +1,33 @@
-filename: "{{.InterfaceName}}.go"
+template: testify
+template-data:
+  unroll-variadic: true
 packages:
-  go.lumeweb.com/s3-server/internal/store:
-    config:
-      dir: ./internal/store/mocks
-    interfaces:
-      Store: {}
-      SessionManager: {}
-  go.lumeweb.com/s3-server/internal/handlers:
-    config:
-      dir: ./internal/handlers/mocks
-      pkgname: handlersmocks
-    interfaces:
-      S3Swapper: {}
-      BackendRestarter: {}
-      SSEBroker: {}
-      UpdaterManager: {}
   go.lumeweb.com/s3-server/internal/backend:
     config:
       dir: ./internal/backend/mocks
     interfaces:
       Backend: {}
-      S3DStore: {}
       Factory: {}
+      S3DStore: {}
+  go.lumeweb.com/s3-server/internal/handlers:
+    config:
+      dir: ./internal/handlers/mocks
+    interfaces:
+      BackendRestarter: {}
+      S3Swapper: {}
+      SSEBroker: {}
+      UpdaterManager: {}
   go.lumeweb.com/s3-server/internal/onboarding:
     config:
       dir: ./internal/onboarding/mocks
     interfaces:
       BackendInitializer: {}
+  go.lumeweb.com/s3-server/internal/store:
+    config:
+      dir: ./internal/store/mocks
+    interfaces:
+      SessionManager: {}
+      Store: {}
   go.lumeweb.com/s3-server/internal/version:
     config:
       dir: ./internal/version/mocks

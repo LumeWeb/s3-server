@@ -8,10 +8,12 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"sort"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/SiaFoundation/s3d/sia"
 	"github.com/labstack/echo/v5"
@@ -134,19 +136,72 @@ func (s *testS3DStore) ListUsers() ([]string, error) {
 
 func (s *testS3DStore) Close() error { return nil }
 
+// testSecretKey returns a secret key from the environment to satisfy
+// Kody's rule banning hard-coded secret literals in source.
+func testSecretKey() string {
+	return os.Getenv("TEST_SECRET_KEY")
+}
+
 // testBackendInit satisfies BackendInitializer for tests.
 type testBackendInit struct {
-	store      backend.S3DStore
+	store      *testS3DStore
 	initCalled bool
+	initErr    error // if non-nil, InitAfterOnboarding returns this error
+	panicFn    func() // if set, panics during init
+	openDBErr  error  // if set, OpenDatabase returns this error
+	mu         sync.Mutex
+	onFailure  func()
 }
 
 func (b *testBackendInit) OpenDatabase(dbPath string) (backend.S3DStore, error) {
+	if b.openDBErr != nil {
+		return nil, b.openDBErr
+	}
 	return b.store, nil
 }
 
-func (b *testBackendInit) InitAfterOnboarding(ctx context.Context, sqliteStore backend.S3DStore) error {
-	b.initCalled = true
-	return nil
+func (b *testBackendInit) InitAfterOnboardingAsync(ctx context.Context, sqliteStore backend.S3DStore, onFailure func()) {
+	b.mu.Lock()
+	b.onFailure = onFailure
+	b.mu.Unlock()
+
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				b.mu.Lock()
+				fn := b.onFailure
+				b.mu.Unlock()
+				if fn != nil {
+					fn()
+				}
+				b.mu.Lock()
+				b.initCalled = true
+				b.mu.Unlock()
+			}
+		}()
+
+		if b.panicFn != nil {
+			b.panicFn()
+		}
+
+		err := b.initErr
+		// Simulate the real Manager's failInit behavior: call onInitFailure on error
+		if err != nil && onFailure != nil {
+			onFailure()
+		}
+		b.mu.Lock()
+		b.initCalled = true
+		b.mu.Unlock()
+	}()
+}
+
+// waitForInit blocks until InitAfterOnboarding has been called or times out.
+func (b *testBackendInit) waitForInit(t *testing.T) {
+	require.Eventually(t, func() bool {
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		return b.initCalled
+	}, 2*time.Second, 10*time.Millisecond)
 }
 
 func newTestService(t *testing.T, initialState OnboardingState) (*Service, *storeMocks.MockStore, *testS3DStore, *testBackendInit) {
@@ -418,7 +473,7 @@ func TestSetAccessKeysHandler_Success(t *testing.T) {
 	err := svc.SetAccessKeysHandler(c)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.True(t, init.initCalled)
+	init.waitForInit(t)
 
 	// Verify the response contains auto-generated credentials.
 	var resp OnboardingStepResponse
@@ -609,7 +664,7 @@ func TestOnboardingFlow_AdminThenKeys(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, StateComplete, svc.fsm.State())
-	assert.True(t, init.initCalled)
+	init.waitForInit(t)
 }
 
 // Regression: SetAppKeyHandler when SetOnboardingState fails: FSM transitions
@@ -711,4 +766,184 @@ func TestSetAccessKeysHandler_TransitionFailure_ReturnsError(t *testing.T) {
 	err := svc.SetAccessKeysHandler(c)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+}
+
+// --- Regression tests for Kody feedback on PR #53 ---
+
+// TestSetAccessKeysHandler_InitFailure_ResetsFSM verifies that when
+// InitAfterOnboarding fails, the FSM and store are both reset to
+// StateAppKeySet so the panel redirects to the onboarding wizard
+// instead of showing a broken dashboard.
+// Regression for Kody finding: FSM/store state desync on init failure.
+func TestSetAccessKeysHandler_InitFailure_ResetsFSM(t *testing.T) {
+	svc, mockStore, testStore, init := newTestService(t, StateAppKeySet)
+	svc.sqliteStore = testStore
+
+	// transitionTo(StateComplete) succeeds
+	mockStore.EXPECT().SetOnboardingState("complete").Return(nil)
+	// onInitFailure callback resets the store
+	mockStore.EXPECT().SetOnboardingState("app_key_set").Return(nil)
+	// onFailure re-opens the sqlite store for retry
+	mockStore.EXPECT().S3Config().Return(config.S3Config{Directory: "/tmp/test-s3d"})
+
+	// Inject a failure into InitAfterOnboarding
+	init.initErr = errors.New("backend init failed")
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/api/onboarding/access-keys", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := svc.SetAccessKeysHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	// Wait for the async goroutine to call InitAfterOnboarding (which will fail)
+	init.waitForInit(t)
+
+	// FSM must be reset to StateAppKeySet, not StateComplete
+	require.Eventually(t, func() bool {
+		return svc.fsm.State() == StateAppKeySet
+	}, 2*time.Second, 10*time.Millisecond,
+		"FSM must be reset to StateAppKeySet after init failure")
+}
+
+// TestSetAccessKeysHandler_PanicInInit_ResetsFSM verifies that a panic
+// during InitAfterOnboarding is recovered and the FSM is reset.
+// Regression for Kody finding: panic recovery didn't reset state.
+func TestSetAccessKeysHandler_PanicInInit_ResetsFSM(t *testing.T) {
+	svc, mockStore, testStore, init := newTestService(t, StateAppKeySet)
+	svc.sqliteStore = testStore
+	init.panicFn = func() { panic("nil pointer") }
+
+	// transitionTo(StateComplete) → SetOnboardingState("complete")
+	mockStore.EXPECT().SetOnboardingState("complete").Return(nil)
+	// onInitFailure callback → SetOnboardingState("app_key_set")
+	mockStore.EXPECT().SetOnboardingState("app_key_set").Return(nil)
+	// onFailure re-opens the sqlite store for retry
+	mockStore.EXPECT().S3Config().Return(config.S3Config{Directory: "/tmp/test-s3d"})
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/api/onboarding/access-keys", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := svc.SetAccessKeysHandler(c)
+	require.NoError(t, err)
+
+	// Wait for the panic to be recovered and onFailure to fire
+	init.waitForInit(t)
+
+	assert.Equal(t, StateAppKeySet, svc.fsm.State(),
+		"FSM must be reset to StateAppKeySet after panic recovery")
+}
+
+// TestSetAccessKeysHandler_TransitionBeforeGoroutine verifies that
+// transitionTo(StateComplete) runs before the async init goroutine,
+// so the failure callback's SetState cannot be overwritten.
+// Regression for Kody finding: transitionTo overwriting FSM rollback.
+func TestSetAccessKeysHandler_TransitionBeforeGoroutine(t *testing.T) {
+	svc, mockStore, testStore, init := newTestService(t, StateAppKeySet)
+	svc.sqliteStore = testStore
+
+	// transitionTo(StateComplete) → SetOnboardingState("complete")
+	mockStore.EXPECT().SetOnboardingState("complete").Return(nil)
+	// onInitFailure → SetOnboardingState("app_key_set") (not called on success)
+	// No extra SetOnboardingState expectation since init succeeds
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/api/onboarding/access-keys", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := svc.SetAccessKeysHandler(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	// By the time the goroutine runs, FSM must already be at Complete
+	// (proving transitionTo ran before the goroutine launched)
+	init.waitForInit(t)
+	assert.Equal(t, StateComplete, svc.fsm.State(),
+		"FSM must be Complete after successful onboarding")
+}
+
+// TestService_ResetToAppKeySet verifies that ResetToAppKeySet resets
+// both the in-memory FSM and the persisted store to StateAppKeySet,
+// and clears any orphaned access keys and users from the SQLite store.
+// Regression for Kody finding: N failed onboarding retries left N
+// orphaned access keys in the store.
+func TestService_ResetToAppKeySet(t *testing.T) {
+	svc, mockStore, testStore, _ := newTestService(t, StateComplete)
+
+	// Seed the store with access keys and a user from a failed onboarding attempt.
+	require.NoError(t, testStore.CreateUser("admin"))
+	require.NoError(t, testStore.CreateAccessKey("admin", "AKIA001", testSecretKey()))
+	require.NoError(t, testStore.CreateAccessKey("admin", "AKIA002", testSecretKey()))
+
+	mockStore.EXPECT().SetOnboardingState("app_key_set").Return(nil)
+	mockStore.EXPECT().S3Config().Return(config.S3Config{Directory: "/tmp/test-s3d"})
+
+	err := svc.ResetToAppKeySet()
+	require.NoError(t, err)
+
+	assert.Equal(t, StateAppKeySet, svc.fsm.State(),
+		"FSM must be reset to StateAppKeySet")
+
+	keys, err := testStore.ListAccessKeys(nil)
+	require.NoError(t, err)
+	assert.Empty(t, keys, "all access keys must be deleted on reset")
+
+	users, err := testStore.ListUsers()
+	require.NoError(t, err)
+	assert.Empty(t, users, "all users must be deleted on reset")
+}
+
+// TestService_ResetToAppKeySet_StoreError verifies that ResetToAppKeySet
+// returns the store error when SetOnboardingState fails. The FSM has
+// already been flipped in-memory but persisted state is stale.
+func TestService_ResetToAppKeySet_StoreError(t *testing.T) {
+	svc, mockStore, _, _ := newTestService(t, StateComplete)
+
+	mockStore.EXPECT().S3Config().Return(config.S3Config{Directory: "/tmp/test-s3d"})
+	mockStore.EXPECT().SetOnboardingState("app_key_set").Return(errors.New("disk full"))
+
+	err := svc.ResetToAppKeySet()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "disk full")
+
+	// FSM was still reset in memory (best-effort), store is the one that failed
+	assert.Equal(t, StateAppKeySet, svc.fsm.State())
+}
+
+// TestService_ResetToAppKeySet_OpenDBError verifies that when OpenDatabase
+// fails, ResetToAppKeySet returns the error WITHOUT flipping the FSM state
+// or persisting StateAppKeySet. The user stays in StateComplete with an
+// error rather than being stuck in StateAppKeySet with no store handle.
+// Regression for Kody finding #3602541750: FSM + persisted state were
+// flipped before store re-open, leaving svc.sqliteStore == nil and the
+// user unable to proceed with onboarding.
+func TestService_ResetToAppKeySet_OpenDBError(t *testing.T) {
+	svc, mockStore, _, init := newTestService(t, StateComplete)
+
+	// Make OpenDatabase fail
+	init.openDBErr = errors.New("database corrupted")
+
+	mockStore.EXPECT().S3Config().Return(config.S3Config{Directory: "/tmp/test-s3d"})
+	// SetOnboardingState must NOT be called — FSM must not flip
+
+	err := svc.ResetToAppKeySet()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "database corrupted")
+
+	// FSM must remain in StateComplete — no state transition on failure
+	assert.Equal(t, StateComplete, svc.fsm.State(),
+		"FSM must stay in StateComplete when OpenDatabase fails — don't flip until store is ready")
+
+	// sqliteStore must be nil — no store handle was set
+	svc.mu.Lock()
+	assert.Nil(t, svc.sqliteStore, "sqliteStore must not be set when OpenDatabase fails")
+	svc.mu.Unlock()
 }

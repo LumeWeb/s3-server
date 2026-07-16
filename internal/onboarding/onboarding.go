@@ -55,7 +55,7 @@ func (svc *Service) transitionTo(target OnboardingState) error {
 // Defined here by the consumer; satisfied implicitly by *backend.Manager.
 type BackendInitializer interface {
 	OpenDatabase(dbPath string) (backend.S3DStore, error)
-	InitAfterOnboarding(ctx context.Context, sqliteStore backend.S3DStore) error
+	InitAfterOnboardingAsync(ctx context.Context, sqliteStore backend.S3DStore, onFailure func())
 }
 
 type SetAppKeyRequest struct {
@@ -129,6 +129,7 @@ type Service struct {
 	log     *zap.Logger
 	backend BackendInitializer
 	fsm     StateMachine
+	ctx     context.Context // lifecycle context for async operations
 
 	publicKey  [32]byte
 	privateKey [32]byte
@@ -142,18 +143,25 @@ func NewService(s store.Store, log *zap.Logger, be BackendInitializer) (*Service
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate NaCl keypair: %w", err)
 	}
-	return &Service{
-		store:      s,
-		log:        log,
-		backend:    be,
-		fsm:        NewFSM(OnboardingState(s.OnboardingState())),
-		publicKey:  *pub,
+	svc := &Service{
+		store:     s,
+		log:       log,
+		backend:   be,
+		fsm:       NewFSM(OnboardingState(s.OnboardingState())),
+		publicKey: *pub,
 		privateKey: *priv,
-	}, nil
+	}
+	return svc, nil
 }
 
 func (svc *Service) PublicKey() [32]byte {
 	return svc.publicKey
+}
+
+// SetContext stores the application lifecycle context so async operations
+// (e.g. InitAfterOnboardingAsync) can be cancelled on shutdown.
+func (svc *Service) SetContext(ctx context.Context) {
+	svc.ctx = ctx
 }
 
 // PublicKeyBase64 returns the server's NaCl public key as a base64 string.
@@ -361,32 +369,39 @@ func (svc *Service) SetAccessKeysHandler(c *echo.Context) error {
 		return api.SendInternal(c, api.TypeAccessKeyCreateFailed, "failed to create access key", err)
 	}
 
-	// init s3d backend now that we have app key, access keys, and a user
-	svc.log.Info("initializing s3d backend after onboarding")
-
-	// s3dSia.New() may panic on certain config issues (nil pointer, missing
-	// fields). Wrap in a deferred recover so we get a proper error log
-	// instead of middleware.Recover() silently returning 500.
-	var initErr error
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				initErr = fmt.Errorf("panic in s3d backend init: %v", r)
-			}
-		}()
-		initErr = svc.backend.InitAfterOnboarding(c.Request().Context(), sqliteStore)
-	}()
-
-	if initErr != nil {
-		svc.log.Error("failed to init s3d backend", zap.Error(initErr))
-		return api.SendInternal(c, api.TypeBackendInitFailed, "failed to init s3d backend", initErr)
-	}
-	svc.log.Info("s3d backend init succeeded")
-
+	// Transition to complete before launching the async init goroutine
+	// so the failure callback's SetState(AppKeySet) cannot be overwritten
+	// by a later transitionTo(StateComplete).
 	if err := svc.transitionTo(StateComplete); err != nil {
 		svc.log.Error("failed to update onboarding state", zap.Error(err))
 		return api.SendInternal(c, api.TypeOnboardingStateFailed, "failed to update onboarding state", err)
 	}
+
+	// init s3d backend asynchronously - the panel shows "starting" status
+	// and transitions to "running" via SSE when init completes.
+	svc.log.Info("starting async s3d backend init after onboarding")
+
+	// Transfer ownership of the sqlite store to the async init goroutine.
+	// Once InitAfterOnboardingAsync launches, the goroutine owns the store
+	// and ResetHandler must not close it. Nil out svc.sqliteStore so
+	// ResetHandler won't find a stale handle to close.
+	svc.mu.Lock()
+	svc.sqliteStore = nil
+	svc.mu.Unlock()
+
+	// On async init failure, reset onboarding so the panel redirects
+	// to the wizard instead of showing a broken dashboard. Both the
+	// FSM and store must be reset to stay consistent. The FSM is
+	// thread-safe (protected by its own mutex).
+	ctx := svc.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	svc.backend.InitAfterOnboardingAsync(ctx, sqliteStore, func() {
+		if resetErr := svc.ResetToAppKeySet(); resetErr != nil {
+			svc.log.Error("failed to reset onboarding after init failure", zap.Error(resetErr))
+		}
+	})
 
 	svc.log.Info("onboarding complete", zap.String("user", userName))
 	return c.JSON(http.StatusOK, OnboardingStepResponse{
@@ -422,6 +437,74 @@ func (svc *Service) SetAdminPasswordHandler(c *echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, OnboardingStepResponse{Status: "admin_password_set"})
+}
+
+// ResetToAppKeySet resets both the in-memory FSM and the persisted store
+// to StateAppKeySet. This is called from main.go's onInitFailure callback
+// when async backend init fails after onboarding completes, so the user
+// is redirected back to the onboarding wizard instead of being stuck on
+// a broken dashboard with an FSM that still says StateComplete.
+func (svc *Service) ResetToAppKeySet() error {
+	// Only reset if onboarding is still Complete. If the user has already
+	// transitioned (e.g. via ResetHandler), don't overwrite their state.
+	if svc.fsm.State() != StateComplete {
+		return nil
+	}
+
+	// Re-open the sqlite store BEFORE flipping the FSM state. If this fails,
+	// the user stays in StateComplete with an error message rather than
+	// being stuck in StateAppKeySet with no store handle to proceed.
+	s3Cfg := svc.store.S3Config()
+	db, err := svc.backend.OpenDatabase(s3Cfg.Directory + "/s3d.db")
+	if err != nil {
+		svc.log.Error("failed to re-open sqlite store after init failure", zap.Error(err))
+		return err
+	}
+
+	// Delete any access keys and users created during the failed onboarding
+	// attempt so the user starts clean on retry. Without this, N retries
+	// leave N orphaned access keys in the store.
+	if keys, err := db.ListAccessKeys(nil); err != nil {
+		svc.log.Error("failed to list access keys during reset", zap.Error(err))
+	} else {
+		for _, key := range keys {
+			if err := db.DeleteAccessKey(key.AccessKeyID); err != nil {
+				svc.log.Error("failed to delete access key during reset", zap.Error(err), zap.String("key", key.AccessKeyID))
+			}
+		}
+	}
+	if users, err := db.ListUsers(); err != nil {
+		svc.log.Error("failed to list users during reset", zap.Error(err))
+	} else {
+		for _, user := range users {
+			if err := db.DeleteUser(user); err != nil {
+				svc.log.Error("failed to delete user during reset", zap.Error(err), zap.String("user", user))
+			}
+		}
+	}
+
+	// Flip the FSM and persist only after the store is ready.
+	svc.fsm.SetState(StateAppKeySet)
+	if err := svc.store.SetOnboardingState(string(StateAppKeySet)); err != nil {
+		svc.log.Error("failed to persist onboarding state reset", zap.Error(err))
+		if closeErr := db.Close(); closeErr != nil {
+			svc.log.Error("failed to close db after SetOnboardingState failure", zap.Error(closeErr))
+		}
+		return err
+	}
+	svc.log.Info("onboarding state reset to app_key_set after async backend init failure")
+
+	svc.mu.Lock()
+	// Close any existing store before replacing (idempotent safety).
+	if svc.sqliteStore != nil {
+		if closeErr := svc.sqliteStore.Close(); closeErr != nil {
+			svc.log.Error("failed to close previous sqlite store during reset", zap.Error(closeErr))
+		}
+	}
+	svc.sqliteStore = db
+	svc.mu.Unlock()
+
+	return nil
 }
 
 // ResetHandler resets onboarding back to the initial state so the user can
