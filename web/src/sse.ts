@@ -34,7 +34,9 @@ export function initToast(Alpine: any) {
     window.__sseProcessing!(processingMsg)
     try {
       const result = await fn()
-      if (result === undefined) return result // error already handled by handleReq
+      // handleReq returns undefined when it has already shown an error toast.
+      // For 204 responses it returns an empty object, so we still show success.
+      if (result === undefined) return result
       if (successMsg) { window.__sseToast!(successMsg, 'success') }
       return result
     } catch (e: any) {

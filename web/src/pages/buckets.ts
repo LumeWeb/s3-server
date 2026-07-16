@@ -1,6 +1,6 @@
 // Alpine component: bucket lifecycle management
 import { api, apiAction, reloadAfter } from '../globals'
-import { nextVersioningStatus, bucketLifecycleURL, bucketVersioningURL, bucketFlushURL, normalizeLifecycleRules } from '../utils'
+import { nextVersioningStatus, bucketLifecycleURL, bucketVersioningURL, normalizeLifecycleRules } from '../utils'
 
 interface BucketComponent extends AlpineMagic {
   showCreate: boolean
@@ -8,9 +8,6 @@ interface BucketComponent extends AlpineMagic {
   createOwner: string
   createErr: string
   creating: boolean
-  showFlush: boolean
-  flushBucketName: string
-  flushing: boolean
   showLifecycle: boolean
   lifecycleBucket: string
   lifecycleRules: { prefix: string; expiration_days: number; status: string }[]
@@ -26,8 +23,6 @@ interface BucketComponent extends AlpineMagic {
   deleteLifecycle(): Promise<void>
   toggleVersioning(name: string, currentStatus: string): void
   confirmVersioning(): Promise<void>
-  openFlush(name: string): void
-  confirmFlush(): Promise<void>
   createBucket(): Promise<void>
 }
 
@@ -38,10 +33,6 @@ export function bucketPage(this: BucketComponent) {
     createOwner: '',
     createErr: '',
     creating: false,
-
-    showFlush: false,
-    flushBucketName: '',
-    flushing: false,
 
     showLifecycle: false,
     lifecycleBucket: '',
@@ -152,26 +143,6 @@ export function bucketPage(this: BucketComponent) {
           'Versioning ' + (newStatus === 'Enabled' ? 'enabled' : 'suspended') + ' for ' + name,
         )
         reloadAfter()
-      } catch {
-        // toast already shown by apiAction
-      }
-    },
-
-    openFlush(name: string) {
-      this.flushBucketName = name
-      this.showFlush = true
-    },
-
-    async confirmFlush() {
-      this.showFlush = false
-      try {
-        await apiAction(
-          'Flushing "' + this.flushBucketName + '"…',
-          () => api()!.post(
-            bucketFlushURL(this.flushBucketName),
-          ),
-          'Bucket "' + this.flushBucketName + '" flushed',
-        )
       } catch {
         // toast already shown by apiAction
       }
