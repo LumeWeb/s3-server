@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [develop]
+    branches: ['**']
   pull_request:
     branches: [develop]
 
@@ -152,27 +152,11 @@ jobs:
           templ fmt .
           git diff --exit-code || (echo "templ files need formatting: run: templ fmt ." && exit 1)
 
-  docker:
-    name: Docker Build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: docker/setup-buildx-action@v4
-
-      - name: Build image
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          push: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
   publish:
     name: Publish to GHCR
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
-    needs: [backend, browser, bench, lint, docker]
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
+    needs: [backend, browser, bench, lint]
     permissions:
       contents: read
       packages: write
@@ -194,9 +178,10 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            type=raw,value=latest
-            type=sha,format=short
-            type=raw,value=develop
+            type=sha,format=short,prefix=sha-
+            type=ref,event=branch,enable=${{ github.event_name == 'push' }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/develop' }}
+            type=raw,value=develop,enable=${{ github.ref == 'refs/heads/develop' }}
 
       - name: Build and push
         uses: docker/build-push-action@v7
@@ -207,3 +192,51 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  test-image-comment:
+    name: Comment test image tag
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    needs: [publish]
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Get short sha
+        id: sha
+        run: echo "short=$(echo '${{ github.sha }}' | cut -c1-7)" >> "$GITHUB_OUTPUT"
+
+      - name: Lowercase image name
+        id: img
+        run: echo "name=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Find existing comment
+        id: find-comment
+        uses: peter-evans/find-comment@v3
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: github-actions[bot]
+          body-includes: Docker image for testing
+
+      - name: Comment with test image tag
+        uses: peter-evans/create-or-update-comment@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-id: ${{ steps.find-comment.outputs.comment-id }}
+          edit-mode: replace
+          body: |
+            ## Docker image for testing
+
+            Pull the image for this PR:
+            ```bash
+            docker pull ghcr.io/${{ steps.img.outputs.name }}:sha-${{ steps.sha.outputs.short }}
+            ```
+
+            Or use in docker-compose:
+            ```yaml
+            services:
+              s3-server:
+                image: ghcr.io/${{ steps.img.outputs.name }}:sha-${{ steps.sha.outputs.short }}
+            ```
+
+            > The image is rebuilt on every push to this PR's branch.
