@@ -39,7 +39,7 @@ RUN CGO_ENABLED=1 GOOS=linux go build \
 FROM debian:bookworm-slim
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ca-certificates && \
+    apt-get install -y --no-install-recommends ca-certificates curl wget && \
     rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /bin/s3-server /usr/local/bin/s3-server
