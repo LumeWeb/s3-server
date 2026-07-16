@@ -113,21 +113,27 @@ templ PageLayoutContent(activePage string, version string, csrfToken string, con
 }
 
 templ Nav(activePage string, version string, csrfToken string) {
-	<nav class="bg-card border-b border-border sticky top-0 z-40" x-data="navFlushApp" @dialog-confirm.window="$event.detail?.source === 'showFlush' && confirmFlush()">
+	<nav
+		class="bg-card border-b border-border sticky top-0 z-40"
+		x-data="navFlushApp"
+		@dialog-confirm.window="
+				$event.detail?.source === 'showFlush' && confirmFlush(),
+				$event.detail?.source === 'showSignOut' && confirmSignOut()
+			"
+	>
 		<div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
 			@components.LogoTitle("S3", false)
 			<!-- Desktop nav -->
 			<div class="hidden md:flex items-center gap-1">
-				@navLink("dashboard", activePage, routes.PanelDashboard, "Dashboard")
-				<div class="nav-sep"></div>
-				@navLink("users", activePage, routes.PanelUsers, "Users")
-				@navLink("keys", activePage, routes.PanelKeys, "Keys")
-				<div class="nav-sep"></div>
-				@navLink("buckets", activePage, routes.PanelBuckets, "Buckets")
-				<div class="nav-sep"></div>
-				@navLink("backups", activePage, routes.PanelBackups, "Backups")
-				@navLink("monitoring", activePage, routes.PanelMonitoring, "Monitoring")
-				@navLink("settings", activePage, routes.PanelSettings, "Settings")
+				<div class="flex items-center divide-x divide-border">
+					@navLink("dashboard", activePage, routes.PanelDashboard, "Dashboard")
+					@navLink("users", activePage, routes.PanelUsers, "Users")
+					@navLink("keys", activePage, routes.PanelKeys, "Keys")
+					@navLink("buckets", activePage, routes.PanelBuckets, "Buckets")
+					@navLink("backups", activePage, routes.PanelBackups, "Backups")
+					@navLink("monitoring", activePage, routes.PanelMonitoring, "Monitoring")
+					@navLink("settings", activePage, routes.PanelSettings, "Settings")
+				</div>
 				<div class="nav-sep"></div>
 				<button
 					type="button"
@@ -140,10 +146,14 @@ templ Nav(activePage string, version string, csrfToken string) {
 				if version != "" {
 					<span class="text-sm text-muted-foreground font-display">v{ version }</span>
 				}
-				<form method="POST" action={ templ.SafeURL(routes.PanelLogout) }>
+				<form id="logout-form" method="POST" action={ templ.SafeURL(routes.PanelLogout) } class="hidden">
 					<input type="hidden" name="_csrf" value={ csrfToken }/>
-					<button type="submit" class={ components.Cls("btn-ghost", "btn-size-sm") }>Sign Out</button>
 				</form>
+				<button
+					type="button"
+					class={ components.Cls("btn-ghost", "btn-size-sm") }
+					@click="showSignOut = true"
+				>Sign Out</button>
 			</div>
 			<!-- Mobile hamburger -->
 			<button
@@ -214,25 +224,27 @@ templ Nav(activePage string, version string, csrfToken string) {
 						if version != "" {
 							<span class="meta-text text-center pt-2">v{ version }</span>
 						}
-						<form method="POST" action={ templ.SafeURL(routes.PanelLogout) }>
-							<input type="hidden" name="_csrf" value={ csrfToken }/>
-							<button type="submit" class={ components.Cls("btn-ghost", "btn-size-default", "w-full", "justify-start") }>Sign Out</button>
-						</form>
+						<button
+							type="button"
+							class={ components.Cls("btn-ghost", "btn-size-default", "w-full", "justify-start") }
+							@click="navOpen = false; showSignOut = true"
+						>Sign Out</button>
 					</div>
 				</div>
 			</div>
 		</div>
 		@components.Dialog("showFlush", "Flush Pending Objects", "This will force-upload all buffered objects to the Sia network and pin them. This is a system-wide operation and does not delete any data.", "Flush", "btn-primary")
+		@components.Dialog("showSignOut", "Sign Out", "Are you sure you want to sign out? You will need to log in again to access the panel.", "Sign Out", "btn-danger")
 	</nav>
 }
 
 templ navLink(id string, activePage string, href string, label string) {
 	{{
-		cls := components.Cls("text-sm transition-colors font-body px-2 py-1 rounded min-h-9 inline-flex items-center")
+		cls := components.Cls("text-sm transition-colors font-medium font-body px-2 py-1 rounded min-h-9 inline-flex items-center")
 		if activePage == id {
-			cls = components.Cls(cls, "text-primary font-bold")
+			cls = components.Cls(cls, "text-primary bg-primary/10")
 		} else {
-			cls = components.Cls(cls, "text-muted-foreground hover:text-primary")
+			cls = components.Cls(cls, "text-muted-foreground hover:text-primary hover:bg-card/50")
 		}
 	}}
 	<a href={ templ.SafeURL(href) } class={ cls }>{ label }</a>
@@ -240,9 +252,9 @@ templ navLink(id string, activePage string, href string, label string) {
 
 templ navLinkMobile(id string, activePage string, href string, label string, closeProp string) {
 	{{
-		cls := components.Cls("text-sm transition-colors font-body px-3 py-2.5 rounded min-h-11 flex items-center w-full")
+		cls := components.Cls("text-sm transition-colors font-medium font-body px-3 py-2.5 rounded min-h-11 flex items-center w-full")
 		if activePage == id {
-			cls = components.Cls(cls, "text-primary font-bold bg-primary/10")
+			cls = components.Cls(cls, "text-primary bg-primary/10")
 		} else {
 			cls = components.Cls(cls, "text-muted-foreground hover:text-primary hover:bg-card/50")
 		}

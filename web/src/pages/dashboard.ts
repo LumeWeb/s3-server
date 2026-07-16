@@ -13,6 +13,8 @@ export function dashboardApp(this: AlpineMagic) {
     updateAvailable: false,
     latestVersion: '',
     generating: false,
+    showDelete: false,
+    deleteAccessKey: '',
 
     async init() {
       await apiReady()
@@ -54,6 +56,19 @@ export function dashboardApp(this: AlpineMagic) {
         reloadAfter()
       } catch {
         this.generating = false
+      }
+    },
+
+    async confirmDelete() {
+      try {
+        await apiAction(
+          'Deleting access key\u2026',
+          () => api()!.del('/_panel/api/keys/' + encodeURIComponent(this.deleteAccessKey)),
+          'Access key deleted',
+        )
+        reloadAfter()
+      } catch {
+        // toast already shown
       }
     },
   }

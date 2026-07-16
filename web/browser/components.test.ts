@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { settingsApp, changePasswordApp, versionCheckApp } from '../src/pages/settings'
+import { settingsApp, changePasswordApp, versionCheckApp, navFlushApp } from '../src/pages/settings'
 import { resetPasswordForm } from '../src/pages/reset_password'
 import { monitoringApp } from '../src/pages/monitoring'
 
@@ -268,5 +268,38 @@ describe('resetPasswordForm', () => {
       'Password must be at least 8 characters',
       'error',
     )
+  })
+})
+
+// --- Nav flush / sign out sub-component ---
+
+describe('navFlushApp', () => {
+  it('returns correct initial state including showSignOut', () => {
+    const c = createComponent(navFlushApp)
+    expect(c.showFlush).toBe(false)
+    expect(c.showSignOut).toBe(false)
+    expect(c.navOpen).toBe(false)
+  })
+
+  it('confirmSignOut submits the logout form', () => {
+    const c = createComponent(navFlushApp)
+
+    // Create a mock form in the document
+    const form = document.createElement('form')
+    form.id = 'logout-form'
+    form.submit = vi.fn() as any
+    document.body.appendChild(form)
+
+    c.confirmSignOut()
+
+    expect((form.submit as any)).toHaveBeenCalled()
+
+    document.body.removeChild(form)
+  })
+
+  it('confirmSignOut does not throw when form is missing', () => {
+    const c = createComponent(navFlushApp)
+    // No form in the document — should not throw
+    expect(() => c.confirmSignOut()).not.toThrow()
   })
 })
