@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -80,9 +81,15 @@ func serveCommand() *cli.Command {
 			},
 			&cli.StringFlag{
 				Name:    "listen-addr",
-				Usage:   "Address to listen on",
+				Usage:   "Address to listen on (HTTPS in managed mode, HTTP otherwise)",
 				EnvVars: []string{envVar("LISTEN_ADDR")},
 				Value:   ":8080",
+			},
+			&cli.StringFlag{
+				Name:    "http-addr",
+				Usage:   "HTTP address for ACME challenges + redirect to HTTPS (managed mode only)",
+				EnvVars: []string{envVar("HTTP_ADDR")},
+				Value:   ":80",
 			},
 		},
 		Action: runServe,
@@ -129,6 +136,7 @@ func isStepReachable(requested, valid string) bool {
 func runServe(c *cli.Context) error {
 	dataDir := c.String("data-dir")
 	listenAddr := c.String("listen-addr")
+	httpAddr := c.String("http-addr")
 
 	// ensure backup storage exists before config load
 	if err := os.MkdirAll(filepath.Join(dataDir, "backups"), 0750); err != nil {
@@ -465,18 +473,31 @@ func runServe(c *cli.Context) error {
 			}
 		}
 
-		// HTTP server on :80 — solves ACME HTTP-01 challenges + redirects to HTTPS
+		// HTTP server (ACME challenges + redirect) — default :80, override with --http-addr
 		redirectAndChallenge := sslMgr.HTTPHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			http.Redirect(w, r, "https://"+r.Host+r.URL.RequestURI(), http.StatusMovedPermanently)
+			target := "https://" + r.Host + r.URL.RequestURI()
+			// If HTTPS is on a non-standard port, append it to the redirect
+			if _, port, err := net.SplitHostPort(listenAddr); err == nil && port != "443" {
+				host := r.Host
+				if h, _, err := net.SplitHostPort(r.Host); err == nil {
+					host = h
+				} else {
+					// r.Host may be a bare IP literal (e.g. IPv6 "[::1]");
+					// strip brackets to avoid double-wrapping in JoinHostPort.
+					host = strings.TrimPrefix(strings.TrimSuffix(host, "]"), "[")
+				}
+				target = "https://" + net.JoinHostPort(host, port) + r.URL.RequestURI()
+			}
+			http.Redirect(w, r, target, http.StatusMovedPermanently)
 		}))
 		httpServer = &http.Server{
-			Addr:    ":80",
+			Addr:    httpAddr,
 			Handler: redirectAndChallenge,
 		}
 
-		// HTTPS server on :443
+		// HTTPS server — uses listen-addr (default :8080, set to :443 for bare-metal)
 		httpsServer = &http.Server{
-			Addr:      ":443",
+			Addr:      listenAddr,
 			Handler:   mux,
 			TLSConfig: sslMgr.TLSConfig(),
 		}
