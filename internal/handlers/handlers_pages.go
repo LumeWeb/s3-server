@@ -148,6 +148,24 @@ func (s *Services) bucketsPage(c *echo.Context) error {
 		return s.renderPageError(c, "Failed to load users", "An error occurred while fetching the user list.")
 	}
 
+	keys, err := ks.ListAccessKeys(nil)
+	if err != nil {
+		s.log.Error("failed to list access keys", zap.Error(err))
+		return s.renderPageError(c, "Failed to load access keys", "An error occurred while fetching the access key list.")
+	}
+	keyCounts := make(map[string]int, len(keys))
+	for _, k := range keys {
+		keyCounts[k.UserName]++
+	}
+
+	viewUsers := make([]views.UserInfo, len(users))
+	for i, name := range users {
+		viewUsers[i] = views.UserInfo{
+			Name:     name,
+			KeyCount: keyCounts[name],
+		}
+	}
+
 	buckets, err := b.ListAllBuckets(c.Request().Context())
 	if err != nil {
 		s.log.Error("failed to list buckets", zap.Error(err))
@@ -174,7 +192,7 @@ func (s *Services) bucketsPage(c *echo.Context) error {
 		}
 	}
 
-	return views.Buckets(viewBuckets, users, s.csrfToken(c)).Render(c.Request().Context(), c.Response())
+	return views.Buckets(viewBuckets, viewUsers, s.csrfToken(c)).Render(c.Request().Context(), c.Response())
 }
 
 func (s *Services) backupsPage(c *echo.Context) error {
