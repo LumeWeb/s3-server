@@ -831,6 +831,9 @@ func TestServices_BucketsPage(t *testing.T) {
 	svc.csrfToken = func(*echo.Context) string { return "csrf-token" }
 
 	mockKS.On("ListUsers").Return([]string{"default"}, nil)
+	mockKS.On("ListAccessKeys", (*string)(nil)).Return([]backend.AccessKeyInfo{
+		{UserName: "default", AccessKeyID: "AKIA-test"},
+	}, nil)
 
 	created := time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC)
 	mockBackend.On("ListAllBuckets", mock.Anything).Return([]backend.BucketInfo{

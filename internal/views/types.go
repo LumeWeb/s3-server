@@ -38,11 +38,15 @@ type BackupInfo struct {
 	CreatedAt string
 }
 
-// UserSelectOptions converts a slice of user names to SelectOption values
-// for use in dropdowns.
-func UserSelectOptions(users []string) []components.SelectOption {
-	return lo.Map(users, func(u string, _ int) components.SelectOption {
-		return components.SelectOption{Value: u, Label: u}
+// UserSelectOptions converts a slice of user info to SelectOption values
+// for use in dropdowns. Only users with at least one access key are
+// included, since bucket creation requires the owner to have a key.
+func UserSelectOptions(users []UserInfo) []components.SelectOption {
+	filtered := lo.Filter(users, func(u UserInfo, _ int) bool {
+		return u.KeyCount > 0
+	})
+	return lo.Map(filtered, func(u UserInfo, _ int) components.SelectOption {
+		return components.SelectOption{Value: u.Name, Label: u.Name}
 	})
 }
 

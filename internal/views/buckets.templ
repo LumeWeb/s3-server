@@ -5,7 +5,7 @@ import (
 	"go.lumeweb.com/s3-server/internal/views/components"
 )
 
-templ Buckets(buckets []BucketInfo, users []string, csrfToken string) {
+templ Buckets(buckets []BucketInfo, users []UserInfo, csrfToken string) {
 	@PageLayout("Buckets", "buckets", "", csrfToken, BucketsContent(buckets, users, csrfToken))
 }
 
@@ -17,7 +17,7 @@ templ NotReadyContent() {
 	@components.BackendNotReady()
 }
 
-templ BucketsContent(buckets []BucketInfo, users []string, csrfToken string) {
+templ BucketsContent(buckets []BucketInfo, users []UserInfo, csrfToken string) {
 	<div
 		class="max-w-5xl mx-auto px-4 py-6 space-y-6"
 		x-data="bucketPage"
@@ -27,7 +27,7 @@ templ BucketsContent(buckets []BucketInfo, users []string, csrfToken string) {
 			<div class="card-header flex items-center justify-between">
 				<div>
 					<h2 class="section-title">Buckets</h2>
-					<p class={ components.Cls("meta-text", "mt-0.5") }>Each bucket belongs to a user. All access keys under that user share access to their buckets.</p>
+					<p class={ components.Cls("meta-text", "mt-0.5") }>Each bucket belongs to a user. The owner must have an access key before a bucket can be assigned to them.</p>
 				</div>
 				<button
 					type="button"
@@ -205,13 +205,17 @@ templ lifecycleModalBody() {
 	</div>
 }
 
-templ bucketOwnerField(users []string) {
+templ bucketOwnerField(users []UserInfo) {
 	<div>
 		<label class="form-label">Owner</label>
-		@components.Select("", components.SelectOpts{
-			Model:   "createOwner",
-			Options: UserSelectOptions(users),
-		})
-		<p class="form-hint">Bucket will be owned by this user. All access keys under the owner share access.</p>
+		if len(UserSelectOptions(users)) > 0 {
+			@components.Select("", components.SelectOpts{
+				Model:   "createOwner",
+				Options: UserSelectOptions(users),
+			})
+			<p class="form-hint">Only users with access keys are listed. Bucket will be owned by this user. All access keys under the owner share access.</p>
+		} else {
+			<p class="error-msg">No users with access keys. <a href="/keys" class="link-action">Create an access key first.</a></p>
+		}
 	</div>
 }
