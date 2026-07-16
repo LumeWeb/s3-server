@@ -5,9 +5,10 @@ Private S3-compatible storage server backed by the Sia Network. Ships an S3 API,
 ## Features
 
 - **S3-compatible API** — backed by [s3d](https://github.com/SiaFoundation/s3d) and the Sia storage network
-- **Web admin panel** — server-rendered Go templates with Alpine.js + htmx for interactivity
+- **Web admin panel** — server-rendered Go templates with Alpine.js for interactivity
 - **Onboarding wizard** — first-run setup with admin password, S3 access key generation, and indexer configuration
 - **Access key management** — create/delete S3 access keys, group by user, real-time updates via SSE
+- **User management** — create/delete users, assign access keys per user
 - **Bucket lifecycle** — view buckets, configure versioning and lifecycle rules
 - **Backup & restore** — create and download database backups from the panel
 - **Automatic TLS** — Let's Encrypt via Caddy integration, or bring your own certificates
@@ -19,30 +20,31 @@ Private S3-compatible storage server backed by the Sia Network. Ships an S3 API,
 ```
 cmd/s3-server/        CLI entry point (serve command, flags)
 internal/
-  admin/              s3d admin API client
+  admin/              s3d admin API client (Prometheus, stats, system)
   api/                JSON API response helpers and error types
   auth/               Session-based panel authentication (cookie + bcrypt)
-  backend/            s3d factory, store adapter, S3 handler swapper
-  build/              Build metadata (s3d version from go.mod)
+  backend/            s3d factory, store adapter, S3 handler swapper, backend manager
+  build/              Build metadata (s3d version from go.mod, generated)
   config/             YAML + env config (koanf), panel.yml schema
-  handlers/           Panel HTTP handlers (keys, buckets, backups, pages, SSE)
+  handlers/           Panel HTTP handlers (keys, users, buckets, backups, pages, SSE, config)
   onboarding/         First-run setup state machine (robot3 FSM)
-  routes/             Route registration and middleware wiring
+  routes/             Route constants and middleware wiring
   sse/                Server-Sent Events broker for real-time panel updates
   ssl/                TLS configuration (none, platform, managed/ACME)
   status/             Backend health status tracking
   store/              Panel config persistence, sessions, access key store
+  testutil/           Shared test helpers (test logger)
   updater/            Update sidecar communication via flag files
-  version/            Version utilities
+  version/            Version checker (notifies on new releases, never self-applies)
   views/              Templ templates (server-rendered HTML)
-web/                  Frontend source (Vite bundle: Alpine.js, htmx, ky, robot3, libsodium)
+web/                  Frontend source (Vite bundle: Alpine.js, ky, robot3, libsodium)
 ```
 
 ## Tech Stack
 
 **Backend:** Go 1.26, Echo v5, templ, s3d, SQLite (via s3d), koanf, zap, samber/lo
 
-**Frontend:** Bun, Vite, Tailwind CSS v4, Alpine.js, htmx, ky, robot3, libsodium
+**Frontend:** Bun, Vite, Tailwind CSS v4, Alpine.js, ky, robot3, libsodium
 
 **Infrastructure:** Docker (multi-stage build), GitHub Actions CI
 
@@ -125,6 +127,7 @@ Example `panel.yml`:
 
 ```yaml
 onboarding_state: ""
+platform_id: ""
 log:
   format: json
   level: info
@@ -132,14 +135,31 @@ s3:
   directory: /var/lib/s3-server
   indexer_url: https://sia.pinner.xyz
   available_indexers:
-    - https://sia.pinner.xyz
-    - https://sia.storage
+    - url: https://sia.pinner.xyz
+      name: Pinner
+      description: "Our indexer, our support"
+      logo: pinner
+      brand_color: "#12A596"
+    - url: https://sia.storage
+      name: Sia Storage
+      description: "Are you already using Sia Storage? Connect here."
+      logo: sia-storage
+      brand_color: "#EFF2ED"
   host_bases: []
+  disk_usage_limit: 0
+  upload_waste_pct: 0.1
 ssl:
   mode: none
   acme_email: ""
   acme_dir_url: ""
 ```
+
+### CLI Flags
+
+| Flag | Env Var | Default | Description |
+|---|---|---|---|
+| `--data-dir` | `S3_SERVER_DATA_DIR` | `/var/lib/s3-server` | Data directory for panel config and S3 metadata |
+| `--listen-addr` | `S3_SERVER_LISTEN_ADDR` | `:8080` | Address to listen on |
 
 ### Environment Variables
 
@@ -149,24 +169,41 @@ All config keys map to environment variables with `S3_SERVER_` prefix and `__` f
 |---|---|
 | `s3.directory` | `S3_SERVER_S3__DIRECTORY` |
 | `s3.indexer_url` | `S3_SERVER_S3__INDEXER_URL` |
+| `s3.host_bases` | `S3_SERVER_S3__HOST_BASES` (comma-separated) |
 | `log.level` | `S3_SERVER_LOG__LEVEL` |
+| `log.format` | `S3_SERVER_LOG__FORMAT` |
 | `ssl.mode` | `S3_SERVER_SSL__MODE` |
+| `ssl.acme_email` | `S3_SERVER_SSL__ACME_EMAIL` |
+
+### SSL Modes
+
+| Mode | Description |
+|---|---|
+| `none` | No TLS (HTTP only, default) |
+| `platform` | TLS terminated by external load balancer/proxy |
+| `managed` | Automatic TLS via Let's Encrypt (ACME), HTTP on :80 redirects to HTTPS on :443 |
+
+When `managed` and `s3.host_bases` are configured, bucket creation triggers eager cert issuance for `{bucket}.{hostbase}`.
 
 ## Testing
 
-### Backend
+### Backend (Go)
 
 ```bash
 make test          # Go tests with race detector
 make test-short    # Short mode (skip integration tests)
-make vet           # go vet
+make bench         # Go benchmarks with memory allocation stats
+make cover         # Go test coverage report
 ```
 
-### Frontend
+### Frontend (Browser)
 
 ```bash
-make test-web      # Vitest with happy-dom + MSW
+make test-browser  # Vitest browser tests (real Chromium via Playwright)
+make tsc            # TypeScript type check (zero errors required)
 ```
+
+All frontend tests run in real Chromium via Playwright — no happy-dom, no MSW. The test suite covers API calls, SSE, onboarding flow, page rendering, and component behavior.
 
 ## Development
 
@@ -190,12 +227,13 @@ make clean    # Remove binary, dist, generated templ/build files
 
 ## CI
 
-GitHub Actions runs 5 jobs on every push to `develop` (4 on PRs):
+GitHub Actions runs 6 jobs on every push to `develop` (5 on PRs):
 
 | Job | Description |
 |---|---|
-| **Backend** | CSS build → templ generate → go build → go vet → go test -race |
-| **Frontend** | bun install → vite build → tailwind CSS → vitest |
+| **Backend** | CSS build → frontend build → templ generate → go build → vet → test -race → coverage |
+| **Browser** | bun install → vite build → CSS → tsc → Playwright install → vitest run |
+| **Benchmarks** | Full build → benchmarks with memory stats |
 | **Lint** | golangci-lint v2 + templ fmt check |
 | **Docker Build** | Multi-stage buildx build with GHA layer cache (PRs only, no push) |
 | **Publish** | Builds and pushes image to GHCR with `latest`, `develop`, and `sha-<short>` tags (develop pushes only) |
@@ -208,8 +246,9 @@ GitHub Actions runs 5 jobs on every push to `develop` (4 on PRs):
 - **templ for HTML** — server-rendered, no SPA framework
 - **samber/lo** for map/filter/reduce patterns in production Go code
 - **Conventional commits** — `feat:`, `fix:`, `refactor:`, `docs:`, `ci:`, `chore:`
-- **Go interfaces for testability** — `SSEBroker`, `S3Swapper`, `BackendRestarter`, `UpdaterManager` enable mocking
+- **Go interfaces for testability** — `Backend`, `S3DStore`, `S3Swapper`, `Factory`, `SSEBroker`, `UpdaterManager`, `Store` enable mocking via mockery
 - **RWMutex for concurrent access** — key management uses `sync.RWMutex` with `*Locked()` no-lock variants to prevent self-deadlock
+- **CSRF on all forms** — Echo CSRF middleware with `form:_csrf` lookup; templates render hidden `_csrf` input
 
 ## License
 
