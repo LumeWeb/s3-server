@@ -34,7 +34,7 @@ templ MonitoringContent(stats UploadStats, csrfToken string) {
 		@components.ModalShell(components.ModalShellOpts{
 			ShowProp: "showPromGuide",
 			Title:    "Prometheus Setup",
-			MaxWidth: "max-w-lg",
+			MaxWidth: "max-w-2xl",
 		}, promGuideBody())
 		if stats.AccountMaxPinnedData > 0 {
 			@AccountSection(stats)
@@ -72,7 +72,7 @@ templ promGuideBody() {
 		<p class="form-hint">
 			Add a scrape job to your <code class="text-xs">prometheus.yml</code>:
 		</p>
-		<pre class="text-xs bg-muted rounded-lg p-3 overflow-x-auto font-mono"><code x-text="promScrapeConfig"></code></pre>
+		<pre class="text-sm bg-muted rounded-lg p-5 overflow-x-auto font-mono"><code x-text="promScrapeConfig"></code></pre>
 		<p class="meta-text">
 			Use your panel admin password as the Basic Auth password.
 			The username is <code class="text-xs">admin</code>.
