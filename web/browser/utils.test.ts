@@ -8,7 +8,6 @@ import {
   nextVersioningStatus,
   bucketLifecycleURL,
   bucketVersioningURL,
-  bucketFlushURL,
   normalizeLifecycleRules,
   MIN_PASSWORD_LENGTH,
 } from '../src/utils'
@@ -243,12 +242,6 @@ describe('bucketVersioningURL', () => {
 
   it('encodes special characters', () => {
     expect(bucketVersioningURL('buck&ets')).toBe('/_panel/api/buckets/buck%26ets/versioning')
-  })
-})
-
-describe('bucketFlushURL', () => {
-  it('builds flush URL', () => {
-    expect(bucketFlushURL('my-bucket')).toBe('/_panel/api/buckets/my-bucket/flush')
   })
 })
 

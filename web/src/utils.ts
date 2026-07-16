@@ -94,10 +94,6 @@ export function bucketVersioningURL(name: string): string {
   return `/_panel/api/buckets/${encodeURIComponent(name)}/versioning`
 }
 
-export function bucketFlushURL(name: string): string {
-  return `/_panel/api/buckets/${encodeURIComponent(name)}/flush`
-}
-
 // --- Buckets: lifecycle rule normalization ---
 
 export function normalizeLifecycleRules(rules: any[]): { prefix: string; expiration_days: number; status: string }[] {

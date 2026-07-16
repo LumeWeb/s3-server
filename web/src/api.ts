@@ -102,8 +102,9 @@ const api = ky.create({
 export async function handleReq<T = any>(promise: Promise<Response>): Promise<T | undefined> {
   try {
     const res = await promise
-    // 204 No Content has an empty body — don't attempt to parse as JSON
-    if (res.status === 204) return undefined as T
+    // 204 No Content has an empty body — return empty object so callers
+    // can distinguish success from handled errors (which return undefined).
+    if (res.status === 204) return {} as T
     return await res.json() as T
   } catch (e: any) {
     // Ky v2 HTTPError pre-parses the response body into e.data

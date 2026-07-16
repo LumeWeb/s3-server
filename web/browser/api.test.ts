@@ -65,10 +65,10 @@ describe('handleReq — success', () => {
     expect(result).toEqual({ status: 'running' })
   })
 
-  it('returns undefined for 204 No Content without parsing body', async () => {
+  it('returns empty object for 204 No Content without parsing body', async () => {
     mockKyInstance.post.mockReturnValue(mockResponse(204))
     const result = await (window as any).__api.post('/_panel/api/keys', { user_name: 'admin' })
-    expect(result).toBeUndefined()
+    expect(result).toEqual({})
   })
 
   it('passes through body for 201 Created', async () => {

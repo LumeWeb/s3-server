@@ -126,6 +126,20 @@ describe('sse.ts — initToast', () => {
     expect(alpine.$data().msg).toBe('Working…')
   })
 
+  it('__sseAction shows success toast for 204 No Content (regression: flush hangs)', async () => {
+    // handleReq returns {} for 204, not undefined. If it returned undefined,
+    // __sseAction would skip the success toast and processing would stay true forever.
+    initToast(alpine)
+    const fn = vi.fn().mockResolvedValue({})
+
+    const result = await window.__sseAction!('Flushing all buckets…', fn, 'Buckets flushed')
+
+    expect(result).toEqual({})
+    expect(alpine.$data().processing).toBe(false)
+    expect(alpine.$data().msg).toBe('Buckets flushed')
+    expect(alpine.$data().type).toBe('success')
+  })
+
   it('__reloadAfter calls window.location.reload after delay', () => {
     const reloadSpy = vi.fn()
     initToast(alpine)
