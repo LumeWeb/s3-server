@@ -5,8 +5,8 @@ import (
 	"go.lumeweb.com/s3-server/internal/views/components"
 )
 
-templ Buckets(buckets []BucketInfo, users []UserInfo, csrfToken string) {
-	@PageLayout("Buckets", "buckets", "", csrfToken, BucketsContent(buckets, users, csrfToken))
+templ Buckets(buckets []BucketInfo, users []UserInfo, setups []SetupConfig, csrfToken string) {
+	@PageLayout("Buckets", "buckets", "", csrfToken, BucketsContent(buckets, users, setups, csrfToken))
 }
 
 templ BucketsNotReady(csrfToken string) {
@@ -17,7 +17,7 @@ templ NotReadyContent() {
 	@components.BackendNotReady()
 }
 
-templ BucketsContent(buckets []BucketInfo, users []UserInfo, csrfToken string) {
+templ BucketsContent(buckets []BucketInfo, users []UserInfo, setups []SetupConfig, csrfToken string) {
 	<div
 		class="max-w-5xl mx-auto px-4 py-6 space-y-6"
 		x-data="bucketPage"
@@ -29,13 +29,15 @@ templ BucketsContent(buckets []BucketInfo, users []UserInfo, csrfToken string) {
 					<h2 class="section-title">Buckets</h2>
 					<p class={ components.Cls("meta-text", "mt-0.5") }>Each bucket belongs to a user. The owner must have an access key before a bucket can be assigned to them.</p>
 				</div>
-				<button
-					type="button"
-					class={ components.Cls("btn-primary", "btn-size-default", "whitespace-nowrap") }
-					@click="showCreate = true"
-				>
-					+ Create Bucket
-				</button>
+				<div class="flex items-center gap-2">
+					<button
+						type="button"
+						class={ components.Cls("btn-primary", "btn-size-default", "whitespace-nowrap") }
+						@click="showCreate = true"
+					>
+						+ Create Bucket
+					</button>
+				</div>
 			</div>
 			<div id="buckets-list" class="divide-y divide-surface-border">
 				if len(buckets) == 0 {
@@ -47,6 +49,7 @@ templ BucketsContent(buckets []BucketInfo, users []UserInfo, csrfToken string) {
 			</div>
 		</div>
 		@components.CreateDialog("showCreate", "Create Bucket", "Bucket Name", "my-bucket", "S3 naming rules: lowercase, 3 to 63 chars.", "[a-z0-9][a-z0-9.-]{0,61}[a-z0-9]", "createBucket()", bucketOwnerField(users))
+		@SetupGuideModal(setups)
 		@LifecycleModal()
 		@components.Dialog("showVersioning", "Confirm Versioning Change", "Change versioning status for this bucket?", "Confirm", "btn-primary")
 	</div>
@@ -77,6 +80,14 @@ templ BucketRow(b BucketInfo) {
 			</div>
 		</div>
 		<div class="ml-4 flex items-center gap-1">
+			<button
+				type="button"
+				class="link-action"
+				title="Show S3 client setup configuration for this bucket"
+				@click={ fmt.Sprintf("openSetupGuide('%s')", components.JsEscape(b.Name)) }
+			>
+				Setup
+			</button>
 			<button
 				type="button"
 				class="link-action"
@@ -217,5 +228,72 @@ templ bucketOwnerField(users []UserInfo) {
 		} else {
 			<p class="error-msg">No users with access keys. <a href="/keys" class="link-action">Create an access key first.</a></p>
 		}
+	</div>
+}
+
+templ SetupGuideModal(setups []SetupConfig) {
+	@components.ModalShell(components.ModalShellOpts{
+		ShowProp:     "showSetupGuide",
+		Title:        "S3 Client Setup",
+		SubtitleProp: "setupBucketName",
+		MaxWidth:     "max-w-2xl",
+	}, setupGuideBody(setups))
+}
+
+templ setupGuideBody(setups []SetupConfig) {
+	<div class="p-5 space-y-5">
+		for _, sc := range setups {
+			<div x-show={ fmt.Sprintf("setupBucketName === '%s'", components.JsEscape(sc.BucketName)) } x-cloak>
+				<div class="space-y-4">
+					<div class="space-y-1.5">
+						<p class="text-sm font-semibold text-foreground font-body">Endpoint</p>
+						<p class="meta-text">Use this server's URL as the S3 endpoint in your client configuration.</p>
+						<pre class="text-sm bg-muted rounded-lg p-4 font-mono"><code>{ sc.Endpoint }</code></pre>
+						@components.CopyButton(sc.Endpoint, "endpoint")
+					</div>
+					<div class="space-y-1.5">
+						<p class="text-sm font-semibold text-foreground font-body">Access Keys</p>
+						if sc.AccessKey != "" {
+							<p class="meta-text">
+								Access key ID: <code class="text-xs font-mono">{ sc.AccessKey }</code>
+							</p>
+							<p class="meta-text">
+								You'll also need the corresponding secret key. Create one on the
+								<a href="/_panel/keys" class="text-primary hover:underline">Keys page</a>
+								{ "if you don't have it." }
+							</p>
+						} else {
+							<p class="meta-text">
+								You need an access key and secret key pair. Create one on the
+								<a href="/_panel/keys" class="text-primary hover:underline">Keys page</a>.
+							</p>
+						}
+					</div>
+					if sc.IsSubdomainMode() && !sc.HasManagedSSL() {
+						<div class="rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3 space-y-1">
+							<p class="text-sm font-medium text-yellow-600 dark:text-yellow-500">Subdomain routing configured without managed SSL</p>
+							<p class="meta-text">HostBases are set but SSL mode is not "managed". Subdomain-style URLs (bucket.host) require wildcard certificates. Use path-style addressing until SSL is configured, or switch to managed SSL mode.</p>
+						</div>
+					}
+					<div class="space-y-1.5">
+						<p class="text-sm font-semibold text-foreground font-body">Client Configuration</p>
+						<p class="meta-text">
+							if sc.useSubdomain() {
+								{ "Subdomain-style addressing is active (bucket.host). All configs below use virtual-hosted-style URLs." }
+							} else {
+								{ "Path-style addressing is active (host/bucket). All configs below use path-style URLs." }
+							}
+						</p>
+						@components.CodeBlock(components.CodeBlockOpts{
+							Tabs:       sc.Tabs(),
+							DefaultIdx: 0,
+						})
+					</div>
+				</div>
+			</div>
+		}
+		<div class="flex justify-end">
+			@components.Button("Done", components.ButtonOpts{Type: "button", Class: components.Cls("btn-primary", "btn-size-sm"), OnClick: "showSetupGuide = false"})
+		</div>
 	</div>
 }

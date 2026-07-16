@@ -4,6 +4,8 @@ import { nextVersioningStatus, bucketLifecycleURL, bucketVersioningURL, normaliz
 
 interface BucketComponent extends AlpineMagic {
   showCreate: boolean
+  showSetupGuide: boolean
+  setupBucketName: string
   createName: string
   createOwner: string
   createErr: string
@@ -24,11 +26,14 @@ interface BucketComponent extends AlpineMagic {
   toggleVersioning(name: string, currentStatus: string): void
   confirmVersioning(): Promise<void>
   createBucket(): Promise<void>
+  openSetupGuide(name: string): void
 }
 
 export function bucketPage(this: BucketComponent) {
   return {
     showCreate: false,
+    showSetupGuide: false,
+    setupBucketName: '',
     createName: '',
     createOwner: '',
     createErr: '',
@@ -165,6 +170,11 @@ export function bucketPage(this: BucketComponent) {
       } finally {
         this.creating = false
       }
+    },
+
+    openSetupGuide(name: string) {
+      this.setupBucketName = name
+      this.showSetupGuide = true
     },
   }
 }

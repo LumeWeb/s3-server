@@ -56,7 +56,7 @@ dev: css web generate build
 
 # Go tests with race detector
 test:
-	TEST_SECRET_KEY=test-key-not-for-prod $(GO) test -count=1 -race ./...
+	TEST_SECRET_KEY=test-key-not-for-prod TEST_ACCESS_KEY=test-key-not-for-prod $(GO) test -count=1 -race ./...
 
 # Frontend tests (real Chromium via Playwright)
 test-web: test-browser

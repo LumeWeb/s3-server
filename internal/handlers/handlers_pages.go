@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	neturl "net/url"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/SiaFoundation/s3d/s3"
@@ -157,6 +159,12 @@ func (s *Services) bucketsPage(c *echo.Context) error {
 	for _, k := range keys {
 		keyCounts[k.UserName]++
 	}
+	keyByUser := make(map[string]string, len(keys))
+	for _, k := range keys {
+		if _, ok := keyByUser[k.UserName]; !ok {
+			keyByUser[k.UserName] = k.AccessKeyID
+		}
+	}
 
 	viewUsers := make([]views.UserInfo, len(users))
 	for i, name := range users {
@@ -172,7 +180,12 @@ func (s *Services) bucketsPage(c *echo.Context) error {
 		return s.renderPageError(c, "Failed to load buckets", "An error occurred while fetching the bucket list.")
 	}
 
+	s3Cfg := s.store.S3Config()
+	sslCfg := s.store.SSLConfig()
+	endpoint := s.deriveEndpoint(c)
+
 	viewBuckets := make([]views.BucketInfo, len(buckets))
+	viewSetups := make([]views.SetupConfig, len(buckets))
 	for i, bucket := range buckets {
 		count, size, err := b.BucketStats(c.Request().Context(), bucket.Name)
 		if err != nil {
@@ -190,9 +203,16 @@ func (s *Services) bucketsPage(c *echo.Context) error {
 			TotalSize:   size,
 			Versioning:  versioning,
 		}
+		viewSetups[i] = views.SetupConfig{
+			Endpoint:   endpoint,
+			HostBases:  s3Cfg.HostBases,
+			SSLMode:    string(sslCfg.Mode),
+			BucketName: bucket.Name,
+			AccessKey:  keyByUser[bucket.Owner],
+		}
 	}
 
-	return views.Buckets(viewBuckets, viewUsers, s.csrfToken(c)).Render(c.Request().Context(), c.Response())
+	return views.Buckets(viewBuckets, viewUsers, viewSetups, s.csrfToken(c)).Render(c.Request().Context(), c.Response())
 }
 
 func (s *Services) backupsPage(c *echo.Context) error {
@@ -239,7 +259,17 @@ func (s *Services) monitoringPage(c *echo.Context) error {
 		s.log.Error("failed to load monitoring stats", zap.Error(err))
 		return s.renderPageError(c, "Failed to load monitoring", "An error occurred while fetching monitoring stats.")
 	}
-	return views.Monitoring(stats, s.csrfToken(c)).Render(c.Request().Context(), c.Response())
+	endpoint := s.deriveEndpoint(c)
+	scheme := "http"
+	host := "localhost"
+	if u, err := neturl.Parse(endpoint); err == nil {
+		if u.Scheme == "https" {
+			scheme = "https"
+		}
+		host = u.Host
+	}
+	promConfig := views.PrometheusConfig{Scheme: scheme, Host: host}
+	return views.Monitoring(stats, promConfig, s.csrfToken(c)).Render(c.Request().Context(), c.Response())
 }
 
 func (s *Services) fetchUploadStats(c *echo.Context) (views.UploadStats, error) {
@@ -347,4 +377,28 @@ func (s *Services) groupedKeysLocked() []views.UserKeyGroup {
 
 func formatPanelTime(t time.Time) string {
 	return t.UTC().Format("2006-01-02 15:04:05 UTC")
+}
+
+// deriveEndpoint builds the S3 endpoint URL from the request context.
+// Uses the request scheme and host, matching how the browser accesses the panel.
+func (s *Services) deriveEndpoint(c *echo.Context) string {
+	scheme := "http"
+	if c.Request().TLS != nil {
+		scheme = "https"
+	}
+	if fwd := c.Request().Header.Get("X-Forwarded-Proto"); fwd != "" {
+		// Take first segment (chained proxies) and normalize to lowercase.
+		if i := strings.IndexByte(fwd, ','); i >= 0 {
+			fwd = fwd[:i]
+		}
+		fwd = strings.ToLower(strings.TrimSpace(fwd))
+		if fwd == "https" || fwd == "http" {
+			scheme = fwd
+		}
+	}
+	host := c.Request().Host
+	if host == "" {
+		host = "localhost"
+	}
+	return fmt.Sprintf("%s://%s", scheme, host)
 }

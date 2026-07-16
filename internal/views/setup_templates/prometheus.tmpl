@@ -1,0 +1,9 @@
+scrape_configs:
+  - job_name: "s3-server"
+    scheme: {{.Scheme}}
+    basic_auth:
+      username: admin
+      password: {{.AdminPasswordPlaceholder}}
+    static_configs:
+      - targets: ["{{.Host}}"]
+    metrics_path: /prometheus

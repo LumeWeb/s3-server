@@ -1,0 +1,17 @@
+# ~/.aws/config
+[profile s3]
+region = us-east-1
+endpoint_url = {{.Endpoint}}
+s3 =
+    addressing_style = {{.AWSCLIAddressingStyle}}
+
+# ~/.aws/credentials
+[s3]
+aws_access_key_id = {{.AccessKeyDisplay}}
+aws_secret_access_key = {{.SecretPlaceholder}}
+
+# List objects in {{.BucketName}}
+aws s3 ls s3://{{.BucketName}}/ --profile s3
+
+# Upload a file
+aws s3 cp myfile.txt s3://{{.BucketName}}/ --profile s3

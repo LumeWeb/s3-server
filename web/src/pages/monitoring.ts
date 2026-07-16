@@ -25,21 +25,6 @@ export function monitoringApp(this: AlpineMagic) {
     error: '',
     showPromGuide: false,
 
-    get promScrapeConfig() {
-      const host = window.location.hostname
-      const port = window.location.port || (window.location.protocol === 'https:' ? '443' : '80')
-      const scheme = window.location.protocol === 'https:' ? 'https' : 'http'
-      return `scrape_configs:
-  - job_name: "s3-server"
-    scheme: ${scheme}
-    basic_auth:
-      username: admin
-      password: <your-admin-password>
-    static_configs:
-      - targets: ["${host}:${port}"]
-    metrics_path: /prometheus`
-    },
-
     get loading() {
       return !this.lastRefresh && !this.error
     },
