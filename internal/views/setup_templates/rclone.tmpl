@@ -1,0 +1,13 @@
+# ~/.config/rclone/rclone.conf
+[s3]
+type = s3
+provider = Other
+env_auth = false
+access_key_id = {{.AccessKeyDisplay}}
+secret_access_key = {{.SecretPlaceholder}}
+endpoint = {{.Endpoint}}
+region = us-east-1
+force_path_style = {{.RclonePathStyle}}
+
+# List objects in {{.BucketName}}
+rclone ls s3:{{.BucketName}}

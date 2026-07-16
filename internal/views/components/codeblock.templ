@@ -1,0 +1,79 @@
+package components
+
+import "fmt"
+
+// CodeBlockTab represents one tab in a CodeBlock.
+type CodeBlockTab struct {
+	Label   string
+	Content string
+}
+
+// CodeBlockOpts configures a CodeBlock.
+type CodeBlockOpts struct {
+	Tabs       []CodeBlockTab
+	DefaultIdx int
+}
+
+// CodeBlock renders a tabbed code block with a copy button.
+// Uses Alpine.js for tab switching and window.__copyToClipboard for clipboard.
+// Tab content is pre-rendered server-side as plain text strings.
+// Copy reads the active tab's textContent from the DOM.
+templ CodeBlock(opts CodeBlockOpts) {
+	if len(opts.Tabs) == 0 {
+		return
+	}
+	<div
+		class="rounded-lg border border-surface-border bg-muted/50 overflow-hidden"
+		x-data={ fmt.Sprintf("{ active: %d, copied: false }", opts.DefaultIdx) }
+	>
+		<div class="flex items-center border-b border-surface-border px-2">
+			<svg class="h-3.5 w-3.5 text-muted-foreground mr-2 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+				<path stroke-linecap="round" stroke-linejoin="round" d="M6.75 7.5l3 2.25-3 2.25m4.5 0h3m-9 8.25h13.5A2.25 2.25 0 0021 18V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v12a2.25 2.25 0 002.25 2.25z"></path>
+			</svg>
+			if len(opts.Tabs) > 1 {
+				<div class="flex">
+					for i, tab := range opts.Tabs {
+						<button
+							type="button"
+							class="text-xs px-2.5 py-1.5 rounded-sm transition-colors"
+							:class={ fmt.Sprintf("active === %d ? 'text-foreground bg-muted' : 'text-muted-foreground hover:text-foreground'", i) }
+							@click={ fmt.Sprintf("active = %d; copied = false", i) }
+						>
+							{ tab.Label }
+						</button>
+					}
+				</div>
+			} else {
+				<span class="text-xs text-muted-foreground px-1 py-1.5">{ opts.Tabs[0].Label }</span>
+			}
+			<button
+				type="button"
+				class="flex items-center gap-1 ml-auto rounded-md px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:bg-foreground/5 transition-colors"
+				@click="window.__copyToClipboard($refs['code-' + active] ? $refs['code-' + active].textContent : '', 'Copied config'); copied = true; setTimeout(() => copied = false, 1500)"
+			>
+				<svg x-show="!copied" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+					<path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.106 1.907.98 1.907 2.052v7.249c0 1.073-.815 1.927-1.907 1.927a48.421 48.421 0 00-7.703 0c-1.092.0-1.907-.854-1.907-1.927V6.123c0-1.064.806-1.946 1.907-2.052a47.7 47.7 0 011.927-.184"></path>
+				</svg>
+				<svg x-show="copied" x-cloak class="h-3.5 w-3.5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+					<path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"></path>
+				</svg>
+				<span x-show="!copied">Copy</span>
+				<span x-show="copied" x-cloak>Copied!</span>
+			</button>
+		</div>
+		for i, tab := range opts.Tabs {
+			<pre
+				class="text-sm font-mono text-foreground p-4 whitespace-pre-wrap break-words h-64 overflow-y-auto"
+				x-show={ fmt.Sprintf("active === %d", i) }
+				if i != opts.DefaultIdx {
+					x-cloak
+				}
+				x-ref={ fmt.Sprintf("code-%d", i) }
+			>
+				<code>
+					{ tab.Content }
+				</code>
+			</pre>
+		}
+	</div>
+}

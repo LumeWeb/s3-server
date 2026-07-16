@@ -44,6 +44,7 @@ jobs:
       - name: Test
         env:
           TEST_SECRET_KEY: test-key-not-for-prod
+          TEST_ACCESS_KEY: test-key-not-for-prod
         run: make test
 
       - name: Coverage

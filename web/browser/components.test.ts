@@ -233,14 +233,6 @@ describe('monitoringApp', () => {
     c.account_max_pinned_data = 0
     expect(c.accountPct()).toBe(0)
   })
-
-  it('promScrapeConfig generates config with current host', () => {
-    const c = createComponent(monitoringApp)
-    const config = c.promScrapeConfig
-    expect(config).toContain('s3-server')
-    expect(config).toContain('scrape_configs')
-    expect(config).toContain('basic_auth')
-  })
 })
 
 // --- Reset password form ---

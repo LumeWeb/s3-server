@@ -825,14 +825,16 @@ func TestServices_UsersPage(t *testing.T) {
 }
 
 func TestServices_BucketsPage(t *testing.T) {
-	svc, _, _, mockKS := newTestServices(t)
+	svc, mockStore, _, mockKS := newTestServices(t)
 	mockBackend := backendMocks.NewMockBackend(t)
 	svc.backend = func() backend.Backend { return mockBackend }
 	svc.csrfToken = func(*echo.Context) string { return "csrf-token" }
 
+	mockStore.EXPECT().S3Config().Return(config.S3Config{}).Once()
+	mockStore.EXPECT().SSLConfig().Return(config.SSLConfig{}).Once()
 	mockKS.On("ListUsers").Return([]string{"default"}, nil)
 	mockKS.On("ListAccessKeys", (*string)(nil)).Return([]backend.AccessKeyInfo{
-		{UserName: "default", AccessKeyID: "AKIA-test"},
+		{UserName: "admin", AccessKeyID: "AKIA-test"},
 	}, nil)
 
 	created := time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC)
@@ -850,6 +852,11 @@ func TestServices_BucketsPage(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Contains(t, rec.Body.String(), "test-bucket")
 	assert.Contains(t, rec.Body.String(), "2025-01-02 03:04:05 UTC")
+	assert.Contains(t, rec.Body.String(), "Setup")
+	assert.Contains(t, rec.Body.String(), "AWS CLI")
+	assert.Contains(t, rec.Body.String(), "s3cmd")
+	assert.Contains(t, rec.Body.String(), "rclone")
+	assert.Contains(t, rec.Body.String(), "AKIA-test")
 }
 
 func TestServices_BackupsPage(t *testing.T) {
@@ -898,6 +905,9 @@ func TestServices_MonitoringPage(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), "Pending Objects")
 	assert.Contains(t, rec.Body.String(), "3")
 	assert.Contains(t, rec.Body.String(), "1.02 KB")
+	assert.Contains(t, rec.Body.String(), "prometheus.yml")
+	assert.Contains(t, rec.Body.String(), "s3-server")
+	assert.Contains(t, rec.Body.String(), "metrics_path: /prometheus")
 }
 
 func TestServices_SystemFlush(t *testing.T) {

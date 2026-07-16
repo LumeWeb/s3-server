@@ -6,11 +6,11 @@ import (
 	"go.lumeweb.com/s3-server/internal/views/components"
 )
 
-templ Monitoring(stats UploadStats, csrfToken string) {
-	@PageLayout("Monitoring", "monitoring", "", csrfToken, MonitoringContent(stats, csrfToken))
+templ Monitoring(stats UploadStats, promConfig PrometheusConfig, csrfToken string) {
+	@PageLayout("Monitoring", "monitoring", "", csrfToken, MonitoringContent(stats, promConfig, csrfToken))
 }
 
-templ MonitoringContent(stats UploadStats, csrfToken string) {
+templ MonitoringContent(stats UploadStats, promConfig PrometheusConfig, csrfToken string) {
 	<div class="max-w-5xl mx-auto px-4 py-6 space-y-6" x-data="monitoringApp" x-init="init()">
 		<div class="flex items-center justify-between">
 			<div>
@@ -35,7 +35,7 @@ templ MonitoringContent(stats UploadStats, csrfToken string) {
 			ShowProp: "showPromGuide",
 			Title:    "Prometheus Setup",
 			MaxWidth: "max-w-2xl",
-		}, promGuideBody())
+		}, promGuideBody(promConfig))
 		if stats.AccountMaxPinnedData > 0 {
 			@AccountSection(stats)
 		}
@@ -67,12 +67,16 @@ templ MonitoringContent(stats UploadStats, csrfToken string) {
 	</div>
 }
 
-templ promGuideBody() {
+templ promGuideBody(promConfig PrometheusConfig) {
 	<div class="p-5 space-y-4">
 		<p class="form-hint">
 			Add a scrape job to your <code class="text-xs">prometheus.yml</code>:
 		</p>
-		<pre class="text-sm bg-muted rounded-lg p-5 overflow-x-auto font-mono"><code x-text="promScrapeConfig"></code></pre>
+		@components.CodeBlock(components.CodeBlockOpts{
+			Tabs: []components.CodeBlockTab{
+				{Label: "prometheus.yml", Content: PrometheusScrapeConfig(promConfig)},
+			},
+		})
 		<p class="meta-text">
 			Use your panel admin password as the Basic Auth password.
 			The username is <code class="text-xs">admin</code>.

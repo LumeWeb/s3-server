@@ -1,0 +1,11 @@
+# ~/.s3cfg
+[default]
+access_key = {{.AccessKeyDisplay}}
+secret_key = {{.SecretPlaceholder}}
+host_base = {{.HostBase}}
+host_bucket = {{.S3cmdHostBucket}}
+use_https = {{.HTTPSBool}}
+signature_v2 = False
+
+# List objects in {{.BucketName}}
+s3cmd ls s3://{{.BucketName}}/
