@@ -238,6 +238,95 @@ func TestLoad_EnvCSV_TrimsWhitespace(t *testing.T) {
 	assert.Equal(t, []string{"s3.example.com", "backup.example.com"}, cfg.S3.HostBases)
 }
 
+func TestLoad_EnvDomainsAlias(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "panel.yml")
+
+	err := Save(path, DefaultConfig())
+	require.NoError(t, err)
+
+	t.Setenv("S3_SERVER_S3__DOMAINS", "s3.example.com,backup.example.com")
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"s3.example.com", "backup.example.com"}, cfg.S3.HostBases)
+}
+
+func TestLoad_EnvDomainsAlias_SingleDomain(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "panel.yml")
+
+	err := Save(path, DefaultConfig())
+	require.NoError(t, err)
+
+	t.Setenv("S3_SERVER_S3__DOMAINS", "s3.example.com")
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"s3.example.com"}, cfg.S3.HostBases)
+}
+
+func TestLoad_EnvDomainsAlias_TrimsWhitespace(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "panel.yml")
+
+	err := Save(path, DefaultConfig())
+	require.NoError(t, err)
+
+	t.Setenv("S3_SERVER_S3__DOMAINS", " s3.example.com , backup.example.com ")
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"s3.example.com", "backup.example.com"}, cfg.S3.HostBases)
+}
+
+func TestLoad_EnvHostBasesTakesPrecedenceOverDomains(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "panel.yml")
+
+	err := Save(path, DefaultConfig())
+	require.NoError(t, err)
+
+	// Both env vars map to s3.host_bases. HOST_BASES must win
+	// regardless of os.Environ() iteration order.
+	t.Setenv("S3_SERVER_S3__DOMAINS", "domains.example.com")
+	t.Setenv("S3_SERVER_S3__HOST_BASES", "hostbases.example.com")
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"hostbases.example.com"}, cfg.S3.HostBases)
+}
+
+func TestLoad_EnvHostBasesTakesPrecedenceOverDomains_ReversedOrder(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "panel.yml")
+
+	err := Save(path, DefaultConfig())
+	require.NoError(t, err)
+
+	// Set HOST_BASES first this time. Must still win.
+	t.Setenv("S3_SERVER_S3__HOST_BASES", "hostbases.example.com")
+	t.Setenv("S3_SERVER_S3__DOMAINS", "domains.example.com")
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"hostbases.example.com"}, cfg.S3.HostBases)
+}
+
+func TestLoad_EnvDomainsAlias_EmptyDoesNotOverride(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "panel.yml")
+
+	err := Save(path, DefaultConfig())
+	require.NoError(t, err)
+
+	t.Setenv("S3_SERVER_S3__DOMAINS", "")
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, []string{}, cfg.S3.HostBases)
+}
+
 func TestLoad_StatError_PropagatesNonNotExist(t *testing.T) {
 	// Create a directory where a file is expected — stat will succeed
 	// but loading it as a YAML file will fail. Instead, test with a

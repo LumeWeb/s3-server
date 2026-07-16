@@ -244,11 +244,23 @@ func Load(path string) (PanelConfig, error) {
 	}
 
 	// load env overrides: S3_SERVER_ prefix maps to config keys
+	hostBasesEnvKey := EnvPrefix + "S3" + EnvDelimiter + "HOST_BASES"
+	_, hostBasesEnvSet := os.LookupEnv(hostBasesEnvKey)
+
 	if err := k.Load(env.Provider(EnvPrefix, Delimiter, func(key string) string {
-		return strings.ReplaceAll(
+		mapped := strings.ReplaceAll(
 			strings.ToLower(strings.TrimPrefix(key, EnvPrefix)),
 			EnvDelimiter, Delimiter,
 		)
+		// Alias: S3_SERVER_S3__DOMAINS maps to s3.host_bases.
+		// Skip when HOST_BASES is also set so it wins deterministically.
+		if mapped == "s3.domains" {
+			if hostBasesEnvSet {
+				return ""
+			}
+			return "s3.host_bases"
+		}
+		return mapped
 	}), nil); err != nil {
 		return defaults, fmt.Errorf("failed to load env vars: %w", err)
 	}

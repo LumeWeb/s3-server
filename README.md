@@ -145,7 +145,7 @@ s3:
       description: "Are you already using Sia Storage? Connect here."
       logo: sia-storage
       brand_color: "#EFF2ED"
-  host_bases: []
+  host_bases: [] # S3 Domains: comma-separated domains for virtual-hosted-style URLs (bucket.example.com)
   disk_usage_limit: 0
   upload_waste_pct: 0.1
 ssl:
@@ -170,6 +170,7 @@ All config keys map to environment variables with `S3_SERVER_` prefix and `__` f
 | `s3.directory` | `S3_SERVER_S3__DIRECTORY` |
 | `s3.indexer_url` | `S3_SERVER_S3__INDEXER_URL` |
 | `s3.host_bases` | `S3_SERVER_S3__HOST_BASES` (comma-separated) |
+| `s3.host_bases` | `S3_SERVER_S3__DOMAINS` (comma-separated, alias) |
 | `log.level` | `S3_SERVER_LOG__LEVEL` |
 | `log.format` | `S3_SERVER_LOG__FORMAT` |
 | `ssl.mode` | `S3_SERVER_SSL__MODE` |
