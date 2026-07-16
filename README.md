@@ -119,7 +119,7 @@ CI publishes images to GHCR on every push to `develop`. The following tags are a
 
 ## Configuration
 
-Configuration is loaded from `panel.yml` in the data directory (default: `/var/lib/s3-server`), with environment variable overrides using the `S3_SERVER_` prefix and `__` delimiter.
+Configuration is loaded from `panel.yml` in the data directory (default: `/var/lib/s3-server`, or `/data` in Docker), with environment variable overrides using the `S3_SERVER_` prefix and `__` delimiter.
 
 Example `panel.yml`:
 
