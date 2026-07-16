@@ -200,6 +200,7 @@ jobs:
     needs: [publish]
     permissions:
       pull-requests: write
+      issues: write
     steps:
       - name: Get short sha
         id: sha
@@ -217,13 +218,19 @@ jobs:
           comment-author: github-actions[bot]
           body-includes: Docker image for testing
 
+      - name: Delete previous comment
+        if: steps.find-comment.outputs.comment-id != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api repos/${{ github.repository }}/issues/comments/${{ steps.find-comment.outputs.comment-id }} \
+            -X DELETE
+
       - name: Comment with test image tag
         uses: peter-evans/create-or-update-comment@v5
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           issue-number: ${{ github.event.pull_request.number }}
-          comment-id: ${{ steps.find-comment.outputs.comment-id }}
-          edit-mode: replace
           body: |
             ## Docker image for testing
 
