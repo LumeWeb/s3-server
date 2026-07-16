@@ -357,4 +357,32 @@ describe('dashboardApp', () => {
 
     expect(c.generating).toBe(false)
   })
+
+  it('has showDelete and deleteAccessKey initial state', () => {
+    const c = createComponent(dashboardApp)
+    expect(c.showDelete).toBe(false)
+    expect(c.deleteAccessKey).toBe('')
+  })
+
+  it('confirmDelete calls api.del with encoded access key', async () => {
+    const { apiClient } = stubGlobals()
+    const c = createComponent(dashboardApp)
+    c.deleteAccessKey = 'AKIA123/abc'
+
+    await c.confirmDelete()
+
+    expect(apiClient.del).toHaveBeenCalledWith('/_panel/api/keys/AKIA123%2Fabc')
+    expect(reloadSpy).toHaveBeenCalled()
+  })
+
+  it('confirmDelete handles errors without throwing', async () => {
+    stubGlobals({
+      __sseAction: vi.fn(async () => { throw new Error('Network error') }),
+    })
+    const c = createComponent(dashboardApp)
+    c.deleteAccessKey = 'AKIA456'
+
+    await c.confirmDelete()
+    // should not throw
+  })
 })

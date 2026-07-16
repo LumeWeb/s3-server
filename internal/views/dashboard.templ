@@ -10,7 +10,7 @@ templ Dashboard(version string, groups []UserKeyGroup, userCount int, bucketCoun
 }
 
 templ DashboardContent(version string, groups []UserKeyGroup, userCount int, bucketCount int, csrfToken string) {
-	<div class="max-w-5xl mx-auto px-4 py-6 space-y-6" x-data="dashboardApp">
+	<div class="max-w-5xl mx-auto px-4 py-6 space-y-6" x-data="dashboardApp" @dialog-confirm.window="$event.detail?.source === 'showDelete' && confirmDelete()">
 		<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 			<div class="stat-card">
 				<div class="flex items-center gap-2">
@@ -23,16 +23,16 @@ templ DashboardContent(version string, groups []UserKeyGroup, userCount int, buc
 				</template>
 			</div>
 			<div class="stat-card">
-				<div class="flex items-center justify-around divide-x divide-surface-border">
-					<div class="text-center px-2">
+				<div class="flex items-center divide-x divide-surface-border">
+					<div class="flex-1 text-center">
 						<div class={ components.Cls("section-title", "text-2xl") }>{ fmt.Sprintf("%d", userCount) }</div>
 						<div class={ components.Cls("meta-text", "mt-0.5") }>Users</div>
 					</div>
-					<div class="text-center px-4">
+					<div class="flex-1 text-center">
 						<div class={ components.Cls("section-title", "text-2xl") } x-text="keyCount"></div>
 						<div class={ components.Cls("meta-text", "mt-0.5") }>Access Keys</div>
 					</div>
-					<div class="text-center px-2">
+					<div class="flex-1 text-center">
 						<div class={ components.Cls("section-title", "text-2xl") }>{ fmt.Sprintf("%d", bucketCount) }</div>
 						<div class={ components.Cls("meta-text", "mt-0.5") }>Buckets</div>
 					</div>
@@ -85,6 +85,7 @@ templ DashboardContent(version string, groups []UserKeyGroup, userCount int, buc
 				</div>
 			</div>
 		</div>
+		@components.Dialog("showDelete", "Delete Access Key", "Delete this access key? The key will stop working immediately.", "Delete", "btn-danger")
 	</div>
 }
 

@@ -246,6 +246,7 @@ export function versionCheckApp(this: AlpineMagic) {
 export function navFlushApp(this: AlpineMagic) {
   return {
     showFlush: false,
+    showSignOut: false,
     navOpen: false,
 
     async confirmFlush() {
@@ -258,6 +259,11 @@ export function navFlushApp(this: AlpineMagic) {
       } catch {
         // toast already shown
       }
+    },
+
+    confirmSignOut() {
+      const form = document.querySelector('#logout-form') as HTMLFormElement | null
+      if (form) form.submit()
     },
   }
 }
