@@ -77,9 +77,9 @@ templ SettingsContent(csrfToken string, s3Cfg config.S3Config, sslCfg config.SSL
 					})
 				}
 				@components.InputField(components.InputFieldOpts{
-					Label:       "Host Bases",
+					Label:       "S3 Domains",
 					ID:          "s3-hostbases",
-					Hint:        "Comma-separated domains for virtual-hosted-style S3 URLs",
+					Hint:        "Comma-separated domains for virtual-hosted-style S3 URLs (e.g. mybucket.example.com)",
 					Model:       "s3.host_bases_input",
 					Placeholder: "s3.example.com, storage.example.org",
 				})

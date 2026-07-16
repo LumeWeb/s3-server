@@ -272,7 +272,7 @@ templ setupGuideBody(setups []SetupConfig) {
 					if sc.IsSubdomainMode() && !sc.HasManagedSSL() {
 						<div class="rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3 space-y-1">
 							<p class="text-sm font-medium text-yellow-600 dark:text-yellow-500">Subdomain routing configured without managed SSL</p>
-							<p class="meta-text">HostBases are set but SSL mode is not "managed". Subdomain-style URLs (bucket.host) require wildcard certificates. Use path-style addressing until SSL is configured, or switch to managed SSL mode.</p>
+							<p class="meta-text">S3 Domains are set but SSL mode is not "managed". Subdomain-style URLs (bucket.host) require wildcard certificates. Use path-style addressing until SSL is configured, or switch to managed SSL mode.</p>
 						</div>
 					}
 					<div class="space-y-1.5">
