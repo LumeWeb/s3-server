@@ -139,9 +139,14 @@ func (s *Services) deleteBucket(c *echo.Context) error {
 	if err != nil {
 		return err
 	}
-	b, accessKey, err := s.requireBackend(c)
+	b, err := s.requireBackendOnly(c)
 	if err != nil {
 		return err
+	}
+	accessKey, err := s.accessKeyForBucket(b, c.Request().Context(), name)
+	if err != nil {
+		s.sendErr(c, func() error { return api.SendNotReady(c, api.TypeBackendNotInitialized, err.Error(), nil) })
+		return errResponseSent
 	}
 	if err := b.DeleteBucket(c.Request().Context(), accessKey, name); err != nil {
 		return api.SendInternal(c, api.TypeBucketDeleteFailed, "failed to delete bucket", err)
@@ -160,9 +165,14 @@ func (s *Services) getBucketVersioning(c *echo.Context) error {
 	if err != nil {
 		return err
 	}
-	b, accessKey, err := s.requireBackend(c)
+	b, err := s.requireBackendOnly(c)
 	if err != nil {
 		return err
+	}
+	accessKey, err := s.accessKeyForBucket(b, c.Request().Context(), name)
+	if err != nil {
+		s.sendErr(c, func() error { return api.SendNotReady(c, api.TypeBackendNotInitialized, err.Error(), nil) })
+		return errResponseSent
 	}
 	status, err := b.GetBucketVersioning(c.Request().Context(), accessKey, name)
 	if err != nil {
@@ -184,9 +194,14 @@ func (s *Services) putBucketVersioning(c *echo.Context) error {
 	if status != s3.VersioningStatusEnabled && status != s3.VersioningStatusSuspended {
 		return api.SendValidation(c, api.TypeRuleStatusInvalid, "status must be 'Enabled' or 'Suspended'")
 	}
-	b, accessKey, err := s.requireBackend(c)
+	b, err := s.requireBackendOnly(c)
 	if err != nil {
 		return err
+	}
+	accessKey, err := s.accessKeyForBucket(b, c.Request().Context(), name)
+	if err != nil {
+		s.sendErr(c, func() error { return api.SendNotReady(c, api.TypeBackendNotInitialized, err.Error(), nil) })
+		return errResponseSent
 	}
 	if err := b.PutBucketVersioning(c.Request().Context(), accessKey, name, status); err != nil {
 		return api.SendInternal(c, api.TypeBucketCreateFailed, "failed to set bucket versioning", err)
@@ -199,16 +214,21 @@ func (s *Services) getBucketLifecycle(c *echo.Context) error {
 	if err != nil {
 		return err
 	}
-	b, accessKey, err := s.requireBackend(c)
+	b, err := s.requireBackendOnly(c)
 	if err != nil {
 		return err
+	}
+	accessKey, err := s.accessKeyForBucket(b, c.Request().Context(), bucket)
+	if err != nil {
+		s.sendErr(c, func() error { return api.SendNotReady(c, api.TypeBackendNotInitialized, err.Error(), nil) })
+		return errResponseSent
 	}
 	cfg, err := b.GetBucketLifecycleConfiguration(c.Request().Context(), accessKey, bucket)
 	if err != nil {
 		if errors.Is(err, s3errs.ErrNoSuchLifecycleConfiguration) {
 			return c.JSON(http.StatusOK, lifecycleConfigToJSON(s3.LifecycleConfiguration{}))
 		}
-		return api.SendInternal(c, api.TypeLifecyclePutFailed, "failed to get lifecycle configuration", err)
+		return api.SendInternal(c, api.TypeLifecycleGetFailed, "failed to get lifecycle configuration", err)
 	}
 	return c.JSON(http.StatusOK, lifecycleConfigToJSON(cfg))
 }
@@ -231,9 +251,14 @@ func (s *Services) putBucketLifecycle(c *echo.Context) error {
 			return api.SendValidation(c, api.TypeExpirationDaysInvalid, "expiration_days must be a positive integer")
 		}
 	}
-	b, accessKey, err := s.requireBackend(c)
+	b, err := s.requireBackendOnly(c)
 	if err != nil {
 		return err
+	}
+	accessKey, err := s.accessKeyForBucket(b, c.Request().Context(), bucket)
+	if err != nil {
+		s.sendErr(c, func() error { return api.SendNotReady(c, api.TypeBackendNotInitialized, err.Error(), nil) })
+		return errResponseSent
 	}
 	s3Cfg := req.toS3()
 	if err := s3Cfg.Validate(); err != nil {
@@ -250,9 +275,14 @@ func (s *Services) deleteBucketLifecycle(c *echo.Context) error {
 	if err != nil {
 		return err
 	}
-	b, accessKey, err := s.requireBackend(c)
+	b, err := s.requireBackendOnly(c)
 	if err != nil {
 		return err
+	}
+	accessKey, err := s.accessKeyForBucket(b, c.Request().Context(), bucket)
+	if err != nil {
+		s.sendErr(c, func() error { return api.SendNotReady(c, api.TypeBackendNotInitialized, err.Error(), nil) })
+		return errResponseSent
 	}
 	if err := b.DeleteBucketLifecycleConfiguration(c.Request().Context(), accessKey, bucket); err != nil {
 		return api.SendInternal(c, api.TypeLifecycleDeleteFailed, "failed to delete lifecycle configuration", err)

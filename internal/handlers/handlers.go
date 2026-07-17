@@ -372,6 +372,27 @@ func (s *Services) accessKeyForUser(userName string) (string, error) {
 	return "", fmt.Errorf("user %q has no access keys", userName)
 }
 
+// accessKeyForBucket resolves an access key that owns the given bucket.
+// It looks up the bucket owner's user name via the backend, then finds
+// that user's access key. This ensures s3d ownership checks pass when
+// the panel admin key differs from the bucket owner.
+func (s *Services) accessKeyForBucket(b backend.Backend, ctx context.Context, bucket string) (string, error) {
+	owner, err := b.BucketOwner(ctx, bucket)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve bucket owner: %w", err)
+	}
+	if owner == "" {
+		// bucket doesn't exist or no owner recorded — fall back to admin key
+		return s.adminAccessKey()
+	}
+	key, err := s.accessKeyForUser(owner)
+	if err != nil {
+		// owner recorded but has no keys (e.g. key deleted) — fall back to admin key
+		return s.adminAccessKey()
+	}
+	return key, nil
+}
+
 func (s *Services) proxyToAdmin(c *echo.Context, adminPath string) error {
 	if s.adminHandler == nil {
 		return api.SendNotReady(c, api.TypeAdminHandlerNotConfigured, "admin handler not configured", nil)
