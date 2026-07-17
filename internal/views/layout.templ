@@ -125,15 +125,15 @@ templ Nav(activePage string, version string, csrfToken string) {
 			@components.LogoTitle("S3", false)
 			<!-- Desktop nav -->
 			<div class="hidden md:flex items-center gap-1">
-				<div class="flex items-center divide-x divide-border">
-					@navLink("dashboard", activePage, routes.PanelDashboard, "Dashboard")
-					@navLink("users", activePage, routes.PanelUsers, "Users")
-					@navLink("keys", activePage, routes.PanelKeys, "Keys")
-					@navLink("buckets", activePage, routes.PanelBuckets, "Buckets")
-					@navLink("backups", activePage, routes.PanelBackups, "Backups")
-					@navLink("monitoring", activePage, routes.PanelMonitoring, "Monitoring")
-					@navLink("settings", activePage, routes.PanelSettings, "Settings")
-				</div>
+				@navLink("dashboard", activePage, routes.PanelDashboard, "Dashboard")
+				@navLink("users", activePage, routes.PanelUsers, "Users")
+				@navLink("keys", activePage, routes.PanelKeys, "Keys")
+				<div class="nav-sep"></div>
+				@navLink("buckets", activePage, routes.PanelBuckets, "Buckets")
+				@navLink("backups", activePage, routes.PanelBackups, "Backups")
+				@navLink("monitoring", activePage, routes.PanelMonitoring, "Monitoring")
+				<div class="nav-sep"></div>
+				@navLink("settings", activePage, routes.PanelSettings, "Settings")
 				<div class="nav-sep"></div>
 				<button
 					type="button"
@@ -240,9 +240,9 @@ templ Nav(activePage string, version string, csrfToken string) {
 
 templ navLink(id string, activePage string, href string, label string) {
 	{{
-		cls := components.Cls("text-sm transition-colors font-medium font-body px-2 py-1 rounded min-h-9 inline-flex items-center")
+		cls := components.Cls("text-sm transition-colors font-medium font-body px-3 py-1.5 rounded min-h-9 inline-flex items-center")
 		if activePage == id {
-			cls = components.Cls(cls, "text-primary bg-primary/10")
+			cls = components.Cls(cls, "text-primary bg-primary/5")
 		} else {
 			cls = components.Cls(cls, "text-muted-foreground hover:text-primary hover:bg-card/50")
 		}
@@ -254,7 +254,7 @@ templ navLinkMobile(id string, activePage string, href string, label string, clo
 	{{
 		cls := components.Cls("text-sm transition-colors font-medium font-body px-3 py-2.5 rounded min-h-11 flex items-center w-full")
 		if activePage == id {
-			cls = components.Cls(cls, "text-primary bg-primary/10")
+			cls = components.Cls(cls, "text-primary bg-primary/5")
 		} else {
 			cls = components.Cls(cls, "text-muted-foreground hover:text-primary hover:bg-card/50")
 		}
