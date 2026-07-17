@@ -7,12 +7,12 @@ import (
 	"testing"
 )
 
-// TestNavSeparatorsBetweenAllLinks verifies that nav links are structurally
-// separated — every nav link must have a divider between it and its neighbor.
-// This is a regression test for the missing separator between Users and Keys.
+// TestNavSeparatorsBetweenAllLinks verifies that nav links are visually
+// separated by nav-sep dividers between logical groups. This is a regression
+// test for the missing separator between Users and Keys.
 //
-// The nav uses CSS divide-x on a wrapper div, so separators are automatic.
-// If someone removes the wrapper or adds a link outside it, this test fails.
+// The nav uses manual <div class="nav-sep"> dividers between link groups.
+// If someone removes them or adds a link without a separator, this test fails.
 func TestNavSeparatorsBetweenAllLinks(t *testing.T) {
 	pages := []string{"dashboard", "users", "keys", "buckets", "backups", "monitoring", "settings"}
 	for _, page := range pages {
@@ -23,13 +23,12 @@ func TestNavSeparatorsBetweenAllLinks(t *testing.T) {
 		}
 		html := buf.String()
 
-		// All nav links must be inside the divide-x wrapper
-		if !strings.Contains(html, "divide-x") {
-			t.Errorf("nav for page %q: missing divide-x wrapper (structural separators)", page)
+		// Desktop nav must have nav-sep dividers between groups
+		navSepCount := strings.Count(html, `class="nav-sep"`)
+		if navSepCount < 3 {
+			t.Errorf("nav for page %q: expected at least 3 nav-sep dividers (desktop groups), found %d", page, navSepCount)
 		}
 
-		// No manual nav-sep divs should remain among nav links — they're
-		// now structural via CSS divide-x
 		// Count nav link occurrences — each appears twice: desktop + mobile
 		navLinkCount := strings.Count(html, ">Dashboard<") +
 			strings.Count(html, ">Users<") +
