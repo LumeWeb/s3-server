@@ -52,6 +52,7 @@ const (
 	TypeBackupDeleteFailed     ErrorType = "BACKUP_DELETE_FAILED"
 	TypeBackupStatFailed       ErrorType = "BACKUP_STAT_FAILED"
 	TypeBackupOpenFailed       ErrorType = "BACKUP_OPEN_FAILED"
+	TypeLifecycleGetFailed     ErrorType = "LIFECYCLE_GET_FAILED"
 	TypeLifecyclePutFailed     ErrorType = "LIFECYCLE_PUT_FAILED"
 	TypeLifecycleDeleteFailed  ErrorType = "LIFECYCLE_DELETE_FAILED"
 	TypeBackupListFailed       ErrorType = "BACKUP_LIST_FAILED"

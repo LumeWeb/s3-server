@@ -614,8 +614,9 @@ func TestServices_DeleteBucket(t *testing.T) {
 	svc.backend = func() backend.Backend { return mockBackend }
 
 	mockKS.On("ListAccessKeys", mock.Anything).Return([]backend.AccessKeyInfo{
-		{AccessKeyID: "AKIAADMIN", SecretKey: testSecretKey},
+		{AccessKeyID: "AKIAADMIN", SecretKey: testSecretKey, UserName: "admin"},
 	}, nil)
+	mockBackend.On("BucketOwner", mock.Anything, "mybucket").Return("admin", nil)
 	mockBackend.On("DeleteBucket", mock.Anything, "AKIAADMIN", "mybucket").Return(nil)
 
 	e := echo.New()
@@ -634,8 +635,9 @@ func TestServices_GetBucketVersioning(t *testing.T) {
 	svc.backend = func() backend.Backend { return mockBackend }
 
 	mockKS.On("ListAccessKeys", mock.Anything).Return([]backend.AccessKeyInfo{
-		{AccessKeyID: "AKIAADMIN", SecretKey: testSecretKey},
+		{AccessKeyID: "AKIAADMIN", SecretKey: testSecretKey, UserName: "admin"},
 	}, nil)
+	mockBackend.On("BucketOwner", mock.Anything, "mybucket").Return("admin", nil)
 	mockBackend.On("GetBucketVersioning", mock.Anything, "AKIAADMIN", "mybucket").Return("Enabled", nil)
 
 	e := echo.New()
@@ -658,8 +660,9 @@ func TestServices_PutBucketVersioning(t *testing.T) {
 	svc.backend = func() backend.Backend { return mockBackend }
 
 	mockKS.On("ListAccessKeys", mock.Anything).Return([]backend.AccessKeyInfo{
-		{AccessKeyID: "AKIAADMIN", SecretKey: testSecretKey},
+		{AccessKeyID: "AKIAADMIN", SecretKey: testSecretKey, UserName: "admin"},
 	}, nil)
+	mockBackend.On("BucketOwner", mock.Anything, "mybucket").Return("admin", nil)
 	mockBackend.On("PutBucketVersioning", mock.Anything, "AKIAADMIN", "mybucket", "Enabled").Return(nil)
 
 	e := echo.New()

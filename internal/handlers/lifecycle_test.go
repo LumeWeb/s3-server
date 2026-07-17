@@ -8,26 +8,30 @@ import (
 	"testing"
 
 	"github.com/SiaFoundation/s3d/s3"
+	"github.com/SiaFoundation/s3d/s3/s3errs"
 	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	"go.lumeweb.com/s3-server/internal/api"
 	"go.lumeweb.com/s3-server/internal/backend"
 	backendMocks "go.lumeweb.com/s3-server/internal/backend/mocks"
 )
 
 // setupLifecycleServices creates a test Services with a MockBackend wired in.
 // If withKey is true, the key store is configured to return a single access key
-// (needed for tests that reach adminAccessKey()).
+// (needed for tests that reach adminAccessKey()). BucketOwner is mocked to
+// return an empty owner so accessKeyForBucket falls back to the admin key.
 func setupLifecycleServices(t *testing.T, withKey bool) (*Services, *backendMocks.MockBackend, *backendMocks.MockS3DStore) {
 	svc, _, _, mockKS := newTestServices(t)
 	mockBackend := backendMocks.NewMockBackend(t)
 	svc.backend = func() backend.Backend { return mockBackend }
 	if withKey {
 		mockKS.On("ListAccessKeys", mock.Anything).Return([]backend.AccessKeyInfo{
-			{AccessKeyID: "AKIATEST", SecretKey: "secret"},
+			{AccessKeyID: "AKIATEST", SecretKey: "secret", UserName: "admin"},
 		}, nil)
+		mockBackend.On("BucketOwner", mock.Anything, mock.Anything).Return("admin", nil)
 	}
 	return svc, mockBackend, mockKS
 }
@@ -200,4 +204,157 @@ func TestServices_GetBucketLifecycle_BackendError(t *testing.T) {
 	err := svc.getBucketLifecycle(c)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+}
+
+// --- Regression tests ---
+
+// TestRepro_GetLifecycle_UsesGetErrorType verifies that the GET lifecycle
+// handler returns LIFECYCLE_GET_FAILED (not LIFECYCLE_PUT_FAILED) when the
+// backend returns a non-ErrNoSuchLifecycleConfiguration error. Before the
+// fix, the GET handler reused the PUT error type, causing the frontend to
+// show "Failed to save the lifecycle configuration." even though the user
+// only clicked the tab (a GET, not a save).
+func TestRepro_GetLifecycle_UsesGetErrorType(t *testing.T) {
+	svc, mockBackend, _ := setupLifecycleServices(t, true)
+
+	mockBackend.On("GetBucketLifecycleConfiguration", mock.Anything, "AKIATEST", "my-bucket").
+		Return(s3.LifecycleConfiguration{}, assert.AnError)
+
+	c, rec := lifecycleContext(http.MethodGet, "my-bucket", "")
+
+	err := svc.getBucketLifecycle(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+
+	var resp api.Error
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Equal(t, api.ErrInternal, resp.Code)
+	assert.Equal(t, api.TypeLifecycleGetFailed, resp.Type,
+		"GET lifecycle must use LIFECYCLE_GET_FAILED, not LIFECYCLE_PUT_FAILED")
+	assert.NotEqual(t, api.TypeLifecyclePutFailed, resp.Type,
+		"GET lifecycle must not reuse the PUT error type")
+}
+
+// TestRepro_GetLifecycle_NoSuchConfigurationReturnsEmpty verifies that when
+// the backend returns ErrNoSuchLifecycleConfiguration (bucket has no lifecycle
+// rules), the handler returns 200 OK with an empty config, not a 500 error.
+func TestRepro_GetLifecycle_NoSuchConfigurationReturnsEmpty(t *testing.T) {
+	svc, mockBackend, _ := setupLifecycleServices(t, true)
+
+	mockBackend.On("GetBucketLifecycleConfiguration", mock.Anything, "AKIATEST", "my-bucket").
+		Return(s3.LifecycleConfiguration{}, s3errs.ErrNoSuchLifecycleConfiguration)
+
+	c, rec := lifecycleContext(http.MethodGet, "my-bucket", "")
+
+	err := svc.getBucketLifecycle(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var resp LifecycleConfigJSON
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Empty(t, resp.Rules)
+}
+
+// TestRepro_GetLifecycle_ResolvesBucketOwnerAccessKey verifies that the
+// lifecycle GET handler resolves the bucket owner's access key (not the
+// admin key) so s3d ownership checks pass. Before the fix, the handler
+// used the first admin key, which caused ErrAccessDenied for buckets
+// owned by non-admin users.
+func TestRepro_GetLifecycle_ResolvesBucketOwnerAccessKey(t *testing.T) {
+	svc, mockBackend, mockKS := setupLifecycleServices(t, false)
+
+	// Two users: "admin" and "alice"
+	mockKS.On("ListAccessKeys", mock.Anything).Return([]backend.AccessKeyInfo{
+		{AccessKeyID: "AKIAADMIN", SecretKey: "secret", UserName: "admin"},
+		{AccessKeyID: "AKIAALICE", SecretKey: "secret", UserName: "alice"},
+	}, nil)
+
+	// Bucket "alice-bucket" is owned by "alice"
+	mockBackend.On("BucketOwner", mock.Anything, "alice-bucket").Return("alice", nil)
+
+	// The lifecycle call must use ALICE's key, not ADMIN's
+	mockBackend.On("GetBucketLifecycleConfiguration", mock.Anything, "AKIAALICE", "alice-bucket").
+		Return(s3.LifecycleConfiguration{}, nil)
+
+	c, rec := lifecycleContext(http.MethodGet, "alice-bucket", "")
+
+	err := svc.getBucketLifecycle(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	mockBackend.AssertCalled(t, "GetBucketLifecycleConfiguration",
+		mock.Anything, "AKIAALICE", "alice-bucket")
+}
+
+// TestRepro_PutLifecycle_ResolvesBucketOwnerAccessKey verifies that PUT
+// lifecycle also resolves the bucket owner's access key.
+func TestRepro_PutLifecycle_ResolvesBucketOwnerAccessKey(t *testing.T) {
+	svc, mockBackend, mockKS := setupLifecycleServices(t, false)
+
+	mockKS.On("ListAccessKeys", mock.Anything).Return([]backend.AccessKeyInfo{
+		{AccessKeyID: "AKIAADMIN", SecretKey: "secret", UserName: "admin"},
+		{AccessKeyID: "AKIAALICE", SecretKey: "secret", UserName: "alice"},
+	}, nil)
+	mockBackend.On("BucketOwner", mock.Anything, "alice-bucket").Return("alice", nil)
+	mockBackend.On("PutBucketLifecycleConfiguration", mock.Anything, "AKIAALICE", "alice-bucket", mock.AnythingOfType("s3.LifecycleConfiguration")).
+		Return(nil)
+
+	body := `{"rules":[{"status":"Enabled","prefix":"","expiration_days":30}]}`
+	c, rec := lifecycleContext(http.MethodPut, "alice-bucket", body)
+
+	err := svc.putBucketLifecycle(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	mockBackend.AssertCalled(t, "PutBucketLifecycleConfiguration",
+		mock.Anything, "AKIAALICE", "alice-bucket", mock.AnythingOfType("s3.LifecycleConfiguration"))
+}
+
+// TestRepro_DeleteLifecycle_ResolvesBucketOwnerAccessKey verifies that DELETE
+// lifecycle also resolves the bucket owner's access key.
+func TestRepro_DeleteLifecycle_ResolvesBucketOwnerAccessKey(t *testing.T) {
+	svc, mockBackend, mockKS := setupLifecycleServices(t, false)
+
+	mockKS.On("ListAccessKeys", mock.Anything).Return([]backend.AccessKeyInfo{
+		{AccessKeyID: "AKIAADMIN", SecretKey: "secret", UserName: "admin"},
+		{AccessKeyID: "AKIAALICE", SecretKey: "secret", UserName: "alice"},
+	}, nil)
+	mockBackend.On("BucketOwner", mock.Anything, "alice-bucket").Return("alice", nil)
+	mockBackend.On("DeleteBucketLifecycleConfiguration", mock.Anything, "AKIAALICE", "alice-bucket").
+		Return(nil)
+
+	c, rec := lifecycleContext(http.MethodDelete, "alice-bucket", "")
+
+	err := svc.deleteBucketLifecycle(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusNoContent, rec.Code)
+
+	mockBackend.AssertCalled(t, "DeleteBucketLifecycleConfiguration",
+		mock.Anything, "AKIAALICE", "alice-bucket")
+}
+
+// TestRepro_GetLifecycle_BucketOwnerNoKeysFallsBackToAdmin verifies that when
+// the bucket owner has no access keys (e.g. key was deleted during
+// offboarding), accessKeyForBucket falls back to the admin key instead of
+// returning a 503 error.
+func TestRepro_GetLifecycle_BucketOwnerNoKeysFallsBackToAdmin(t *testing.T) {
+	svc, mockBackend, mockKS := setupLifecycleServices(t, false)
+
+	mockKS.On("ListAccessKeys", mock.Anything).Return([]backend.AccessKeyInfo{
+		{AccessKeyID: "AKIAADMIN", SecretKey: "secret", UserName: "admin"},
+	}, nil)
+	// "bob" owns the bucket but has no access keys
+	mockBackend.On("BucketOwner", mock.Anything, "bob-bucket").Return("bob", nil)
+	// Should fall back to admin key
+	mockBackend.On("GetBucketLifecycleConfiguration", mock.Anything, "AKIAADMIN", "bob-bucket").
+		Return(s3.LifecycleConfiguration{}, nil)
+
+	c, rec := lifecycleContext(http.MethodGet, "bob-bucket", "")
+
+	err := svc.getBucketLifecycle(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	mockBackend.AssertCalled(t, "GetBucketLifecycleConfiguration",
+		mock.Anything, "AKIAADMIN", "bob-bucket")
 }

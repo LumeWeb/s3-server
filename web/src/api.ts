@@ -35,6 +35,7 @@ export const ERROR_MESSAGES: Record<string, string> = Object.fromEntries([
   ['BACKUP_DELETE_FAILED', 'Failed to delete the backup.'],
   ['BACKUP_STAT_FAILED', 'Failed to check the backup file.'],
   ['BACKUP_OPEN_FAILED', 'Failed to open the backup file.'],
+  ['LIFECYCLE_GET_FAILED', 'Failed to load the lifecycle configuration.'],
   ['LIFECYCLE_PUT_FAILED', 'Failed to save the lifecycle configuration.'],
   ['LIFECYCLE_DELETE_FAILED', 'Failed to delete the lifecycle configuration.'],
   ['BACKUP_LIST_FAILED', 'Failed to list backups.'],
