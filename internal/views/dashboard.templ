@@ -14,10 +14,10 @@ templ DashboardContent(version string, groups []UserKeyGroup, userCount int, buc
 		<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 			<div class="stat-card">
 				<div class="flex items-center gap-2">
-					<div class="h-2 w-2 rounded-full" :class="isRunning ? 'bg-primary' : 'bg-destructive'"></div>
+					<div class="h-2 w-2 rounded-full" :class="isRunning ? 'bg-primary' : isStarting ? 'bg-yellow-500 animate-pulse' : 'bg-destructive'"></div>
 					<div class="form-hint">S3 Backend</div>
 				</div>
-				<div class="text-xl font-bold font-display mt-1" :class="isRunning ? 'text-primary' : 'text-destructive'" x-text="isRunning ? 'Running' : 'Stopped'"></div>
+				<div class="text-xl font-bold font-display mt-1" :class="isRunning ? 'text-primary' : isStarting ? 'text-yellow-500' : 'text-destructive'" x-text="isRunning ? 'Running' : isStarting ? 'Starting...' : 'Stopped'"></div>
 				<template x-if="initError">
 					<div class="text-xs text-destructive/80 mt-1 font-body" x-text="initError"></div>
 				</template>

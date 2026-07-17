@@ -7,6 +7,7 @@ export function dashboardApp(this: AlpineMagic) {
     s3Status: S3Status.Stopped,
     initError: '',
     get isRunning() { return this.s3Status === S3Status.Running },
+    get isStarting() { return this.s3Status === S3Status.Starting },
     keyCount: 0,
     uptime: '0s',
     version: '',

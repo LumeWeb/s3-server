@@ -207,30 +207,38 @@ func runServe(c *cli.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to init onboarding service: %w", err)
 	}
-
-	// if onboarding already complete, init s3d immediately
-	if stor.OnboardingState() == string(onboarding.StateComplete) {
-		if err := be.InitFromConfig(c.Context); err != nil {
-			log.Error("failed to init s3d from existing config", zap.Error(err))
-			// Backend init failed — reset onboarding so the user can reconfigure
-			// and the panel redirects to the onboarding wizard instead of the
-			// dashboard (which is useless without a working backend).
-			if resetErr := stor.SetOnboardingState(string(onboarding.StateAppKeySet)); resetErr != nil {
-				log.Error("failed to reset onboarding state after init failure", zap.Error(resetErr))
-			} else {
-				log.Info("onboarding state reset to app_key_set after backend init failure")
-			}
-		}
-	}
-
-	// start version checker (check + notify only, never self-apply)
-	versionChecker := version.NewChecker(appVersion, "siafoundation/s3-server", log)
-	go versionChecker.Start(c.Context)
+	onboardingSvc.SetContext(c.Context)
 
 	// sse broker for real-time dashboard updates
 	sseBroker := sse.NewBroker(stor, be.Status, be.KeyStore, log)
 	sseBroker.SetInitError(be.InitError)
 	sseBroker.StartStatusLoop(c.Context, appVersion)
+
+	// When backend status transitions (starting → running, starting → error),
+	// publish an immediate SSE dashboard event instead of waiting for the
+	// next status tick.
+	be.SetOnStatusChange(func(statusStr, initErr string) {
+		_ = sseBroker.PublishDashboard(sse.DashboardEvent{
+			S3Status:  statusStr,
+			InitError: initErr,
+		})
+	})
+
+	// if onboarding already complete, init s3d asynchronously so the panel
+	// is available immediately. The UI shows "backend starting" until
+	// initialization completes, then transitions to "running" via SSE.
+	// On failure, only log — do NOT reset onboarding state or delete
+	// credentials. The user can retry from the dashboard. Resetting
+	// would destroy valid production access keys on a transient failure.
+	if stor.OnboardingState() == string(onboarding.StateComplete) {
+		be.InitFromConfigAsync(c.Context, func() {
+			log.Error("async backend init failed on cold start; onboarding state preserved")
+		})
+	}
+
+	// start version checker (check + notify only, never self-apply)
+	versionChecker := version.NewChecker(appVersion, "siafoundation/s3-server", log)
+	go versionChecker.Start(c.Context)
 
 	// init echo for panel routes
 	e := echo.New()
