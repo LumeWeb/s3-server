@@ -53,7 +53,7 @@ describe('buildS3ConfigPayload', () => {
     indexer_selection: 'https://sia.lobstr.co',
     custom_indexer: '',
     host_bases_input: '',
-    disk_usage_limit: 100,
+    disk_usage_limit: '100',
     upload_waste_pct: 0.1,
   }
 
@@ -62,7 +62,7 @@ describe('buildS3ConfigPayload', () => {
     expect(payload.directory).toBe('/data')
     expect(payload.indexer_url).toBe('https://sia.lobstr.co')
     expect(payload.host_bases).toEqual(['a.example.com', 'b.example.com'])
-    expect(payload.disk_usage_limit).toBe(100)
+    expect(payload.disk_usage_limit).toBe('100')
     expect(payload.upload_waste_pct).toBe(0.1)
   })
 

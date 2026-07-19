@@ -13,6 +13,7 @@ import (
 	s3dSia "github.com/SiaFoundation/s3d/sia"
 	"github.com/SiaFoundation/s3d/sia/persist/sqlite"
 	"github.com/samber/lo"
+	"github.com/shirou/gopsutil/v4/disk"
 	"go.lumeweb.com/s3-server/internal/config"
 	"go.sia.tech/core/types"
 	sdk "go.sia.tech/siastorage"
@@ -21,12 +22,25 @@ import (
 
 // s3dFactory is the production Factory that initializes real s3d components.
 type s3dFactory struct {
-	log *zap.Logger
+	log        *zap.Logger
+	diskQuery  func(string) (*disk.UsageStat, error)
 }
 
 // NewS3DFactory creates a production Factory backed by real s3d packages.
 func NewS3DFactory(log *zap.Logger) Factory {
-	return &s3dFactory{log: log}
+	return &s3dFactory{log: log, diskQuery: disk.Usage}
+}
+
+func (f *s3dFactory) resolveDiskLimit(s3Cfg config.S3Config) (uint64, bool, error) {
+	limitBytes, hasLimit, err := s3Cfg.DiskUsageLimit.BytesWith(s3Cfg.Directory, f.diskQuery)
+	if err != nil {
+		if s3Cfg.DiskUsageLimit.IsAuto() {
+			f.log.Warn("failed to query disk usage for auto limit; defaulting to conservative cap", zap.Error(err))
+			return config.AutoFallbackGB * 1024 * 1024 * 1024, true, nil
+		}
+		return 0, false, fmt.Errorf("failed to resolve disk usage limit: %w", err)
+	}
+	return limitBytes, hasLimit, nil
 }
 
 func (f *s3dFactory) Init(ctx context.Context, s3Cfg config.S3Config, sqliteStore S3DStore) (Backend, http.Handler, func(), error) {
@@ -55,8 +69,12 @@ func (f *s3dFactory) Init(ctx context.Context, s3Cfg config.S3Config, sqliteStor
 
 	var siaOpts []s3dSia.Option
 	siaOpts = append(siaOpts, s3dSia.WithLogger(f.log.Named("backend")))
-	if s3Cfg.DiskUsageLimit > 0 {
-		siaOpts = append(siaOpts, s3dSia.WithDiskUsageLimit(s3Cfg.DiskUsageLimit))
+	limitBytes, hasLimit, err := f.resolveDiskLimit(s3Cfg)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if hasLimit {
+		siaOpts = append(siaOpts, s3dSia.WithDiskUsageLimit(limitBytes))
 	}
 	if s3Cfg.UploadWastePct > 0 {
 		siaOpts = append(siaOpts, s3dSia.WithUploadWaste(s3Cfg.UploadWastePct))

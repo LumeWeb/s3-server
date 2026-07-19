@@ -15,6 +15,7 @@ import (
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/providers/structs"
 	"github.com/knadh/koanf/v2"
+	"github.com/shirou/gopsutil/v4/disk"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -53,6 +54,110 @@ type LogConfig struct {
 	Format string `koanf:"format" json:"format"`
 }
 
+// DiskUsageLimit represents the S3 disk usage limit setting.
+// Valid values: "auto" (default), "0" (unlimited), or a positive number in GB (e.g. "100").
+type DiskUsageLimit string
+
+const (
+	DiskUsageLimitAuto      DiskUsageLimit = "auto"
+	DiskUsageLimitUnlimited DiskUsageLimit = "0"
+)
+
+// DefaultDiskUsageLimit is the default disk usage limit mode.
+const DefaultDiskUsageLimit = DiskUsageLimitAuto
+
+// AutoPercent is the percentage of total disk capacity used when
+// DiskUsageLimit is "auto".
+const AutoPercent uint64 = 80
+
+// AutoFallbackGB is the conservative cap applied when auto-mode disk query
+// fails, preventing unbounded writes in restricted environments.
+const AutoFallbackGB uint64 = 25
+
+// String returns the raw value of the disk usage limit.
+func (d DiskUsageLimit) String() string { return string(d) }
+
+// IsLimited returns true if a limit should be enforced.
+func (d DiskUsageLimit) IsLimited() bool {
+	return d != "" && d != DiskUsageLimitUnlimited && d != DiskUsageLimitAuto
+}
+
+// IsAuto returns true when the limit mode is auto.
+func (d DiskUsageLimit) IsAuto() bool {
+	return d == "" || d == DiskUsageLimitAuto
+}
+
+// Bytes returns the limit in bytes. For "auto" it queries the filesystem;
+// for "0" or empty it returns (0, false); for numeric values it converts GB to bytes.
+func (d DiskUsageLimit) Bytes(directory string) (uint64, bool, error) {
+	return d.BytesWith(directory, disk.Usage)
+}
+
+// BytesWith is the testable variant of Bytes that accepts a custom disk query
+// function instead of calling disk.Usage directly.
+func (d DiskUsageLimit) BytesWith(directory string, diskQuery func(string) (*disk.UsageStat, error)) (uint64, bool, error) {
+	if d == "" || d == DiskUsageLimitUnlimited {
+		return 0, false, nil
+	}
+	if d == DiskUsageLimitAuto {
+		stat, err := diskQuery(directory)
+		if err != nil {
+			return 0, false, err
+		}
+		return stat.Total * AutoPercent / 100, true, nil
+	}
+	gb, err := strconv.ParseUint(string(d), 10, 64)
+	if err != nil {
+		return 0, false, fmt.Errorf("invalid disk_usage_limit %q: must be auto, 0, or a positive integer", d)
+	}
+	if gb == 0 {
+		return 0, false, nil
+	}
+	return gb * 1024 * 1024 * 1024, true, nil
+}
+
+// MarshalJSON serializes the disk usage limit as a JSON string.
+func (d DiskUsageLimit) MarshalJSON() ([]byte, error) {
+	return []byte(strconv.Quote(string(d))), nil
+}
+
+// UnmarshalJSON parses the disk usage limit from a JSON string.
+func (d *DiskUsageLimit) UnmarshalJSON(data []byte) error {
+	return d.UnmarshalText(data)
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler for koanf/mapstructure compatibility.
+func (d *DiskUsageLimit) UnmarshalText(data []byte) error {
+	s := strings.TrimSpace(string(data))
+	if unq, err := strconv.Unquote(s); err == nil {
+		s = strings.TrimSpace(unq)
+	}
+	return d.Set(s)
+}
+
+// Set validates and assigns the disk usage limit from a raw string value.
+func (d *DiskUsageLimit) Set(s string) error {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		*d = DefaultDiskUsageLimit
+		return nil
+	}
+	lower := strings.ToLower(s)
+	if lower == "auto" {
+		*d = DiskUsageLimitAuto
+		return nil
+	}
+	if lower == "0" || lower == "unlimited" {
+		*d = DiskUsageLimitUnlimited
+		return nil
+	}
+	if _, err := strconv.ParseUint(s, 10, 64); err != nil {
+		return fmt.Errorf("invalid disk_usage_limit %q: must be auto, 0, or a positive integer", s)
+	}
+	*d = DiskUsageLimit(s)
+	return nil
+}
+
 type IndexerOption struct {
 	URL         string `koanf:"url" json:"url"`
 	Name        string `koanf:"name" json:"name"`
@@ -70,7 +175,7 @@ type S3Config struct {
 	IndexerURL        string          `koanf:"indexer_url" json:"indexer_url"`
 	AvailableIndexers []IndexerOption `koanf:"available_indexers" json:"available_indexers"`
 	HostBases         []string        `koanf:"host_bases" json:"host_bases"`
-	DiskUsageLimit    uint64          `koanf:"disk_usage_limit" json:"disk_usage_limit"`
+	DiskUsageLimit    DiskUsageLimit  `koanf:"disk_usage_limit" json:"disk_usage_limit"`
 	UploadWastePct    float64         `koanf:"upload_waste_pct" json:"upload_waste_pct"`
 }
 
@@ -136,8 +241,9 @@ func DefaultConfig() PanelConfig {
 			Mode: SSLModeNone,
 		},
 		S3: S3Config{
-			Directory:  "/var/lib/s3-server",
-			IndexerURL: "https://sia.pinner.xyz",
+			Directory:      "/var/lib/s3-server",
+			IndexerURL:     "https://sia.pinner.xyz",
+			DiskUsageLimit: DefaultDiskUsageLimit,
 			AvailableIndexers: []IndexerOption{
 				{URL: "https://sia.pinner.xyz", Name: "Pinner", Description: "Our indexer, our support", Logo: "pinner", BrandColor: "#12A596"},
 				{URL: "https://sia.storage", Name: "Sia Storage", Description: "Are you already using Sia Storage? Connect here.", Logo: "sia-storage", BrandColor: "#EFF2ED"},
@@ -269,6 +375,7 @@ func Load(path string) (PanelConfig, error) {
 	if err := k.UnmarshalWithConf("", &cfg, koanf.UnmarshalConf{
 		DecoderConfig: &mapstructure.DecoderConfig{
 			DecodeHook: mapstructure.ComposeDecodeHookFunc(
+				diskUsageLimitHookFunc(),
 				stringToSliceHookFunc(),
 				mapstructure.StringToTimeDurationHookFunc(),
 			),
@@ -286,8 +393,35 @@ func Load(path string) (PanelConfig, error) {
 	return cfg, nil
 }
 
+// diskUsageLimitHookFunc converts int/float64/string to DiskUsageLimit.
+// This handles existing configs where disk_usage_limit was stored as a YAML number.
+func diskUsageLimitHookFunc() mapstructure.DecodeHookFunc {
+	return func(from, to reflect.Type, data interface{}) (interface{}, error) {
+		if to != reflect.TypeOf(DiskUsageLimit("")) {
+			return data, nil
+		}
+		switch v := data.(type) {
+		case string:
+			var d DiskUsageLimit
+			if err := d.Set(v); err != nil {
+				return nil, err
+			}
+			return d, nil
+		case int:
+			return DiskUsageLimit(strconv.Itoa(v)), nil
+		case int64:
+			return DiskUsageLimit(strconv.FormatInt(v, 10)), nil
+		case float64:
+			return DiskUsageLimit(strconv.FormatInt(int64(v), 10)), nil
+		case uint64:
+			return DiskUsageLimit(strconv.FormatUint(v, 10)), nil
+		default:
+			return data, nil
+		}
+	}
+}
+
 // stringToSliceHookFunc splits comma-separated strings into []string
-// when the target type is []string. This allows env vars like
 // S3_SERVER_S3__HOST_BASES=s3.example.com,backup.example.com
 // to populate a []string field.
 func stringToSliceHookFunc() mapstructure.DecodeHookFunc {

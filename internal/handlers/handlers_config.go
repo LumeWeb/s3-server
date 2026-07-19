@@ -43,6 +43,15 @@ func (s *Services) setS3Config(c *echo.Context) error {
 		return api.SendValidation(c, api.TypeIndexerLocked, "indexer cannot be changed after initial setup. Changing the indexer requires migrating existing data.")
 	}
 
+	// Validate and normalize disk_usage_limit
+	if req.DiskUsageLimit == "" {
+		req.DiskUsageLimit = config.DefaultDiskUsageLimit
+	} else {
+		if err := req.DiskUsageLimit.Set(string(req.DiskUsageLimit)); err != nil {
+			return api.SendValidation(c, api.TypeDiskLimitInvalid, err.Error())
+		}
+	}
+
 	if err := s.store.SetS3Config(config.S3Config{
 		Directory:         req.Directory,
 		IndexerURL:        req.IndexerURL,
