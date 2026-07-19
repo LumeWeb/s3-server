@@ -5,6 +5,14 @@
 import { api, apiAction, reloadAfter, toast } from '../globals'
 import { buildS3ConfigPayload, readJSONScript, validatePasswordMatch } from '../utils'
 
+export const DiskLimitMode = {
+  AUTO: 'auto',
+  UNLIMITED: 'unlimited',
+  CUSTOM: 'custom',
+} as const
+
+export type DiskLimitModeType = (typeof DiskLimitMode)[keyof typeof DiskLimitMode]
+
 interface SettingsData {
   s3: {
     directory: string
@@ -13,7 +21,9 @@ interface SettingsData {
     indexer_selection: string
     custom_indexer: string
     host_bases_input: string
-    disk_usage_limit: number
+    disk_usage_limit: string
+    disk_usage_limit_mode: DiskLimitModeType
+    disk_usage_limit_custom: number
     upload_waste_pct: number
   }
   ssl: {
@@ -34,7 +44,7 @@ interface SettingsData {
 }
 
 const fallbackSettings: SettingsData = {
-  s3: { directory: '', indexer_url: '', available_indexers: [], indexer_selection: '', custom_indexer: '', host_bases_input: '', disk_usage_limit: 0, upload_waste_pct: 0.1 },
+  s3: { directory: '', indexer_url: '', available_indexers: [], indexer_selection: '', custom_indexer: '', host_bases_input: '', disk_usage_limit: DiskLimitMode.AUTO, disk_usage_limit_mode: DiskLimitMode.AUTO, disk_usage_limit_custom: 100, upload_waste_pct: 0.1 },
   ssl: { mode: '', acme_email: '', acme_dir_url: '' },
   log: { level: 'info', format: 'json' },
 }
@@ -43,6 +53,23 @@ const fallbackUpdate = { sidecar_mode: false, auto_update_on: false, last_digest
 
 export function settingsApp(this: AlpineMagic) {
   const data = readJSONScript<SettingsData>('settings-data', fallbackSettings)
+
+  // Normalize the disk-limit UI state from the persisted string value.
+  const limit = String(data.s3.disk_usage_limit ?? DiskLimitMode.AUTO)
+  let mode: DiskLimitModeType = DiskLimitMode.AUTO
+  let custom = 100
+  if (limit === DiskLimitMode.AUTO) {
+    mode = DiskLimitMode.AUTO
+  } else if (limit === '0') {
+    mode = DiskLimitMode.UNLIMITED
+  } else {
+    mode = DiskLimitMode.CUSTOM
+    custom = Number(limit) || 100
+  }
+  data.s3.disk_usage_limit = limit
+  data.s3.disk_usage_limit_mode = mode
+  data.s3.disk_usage_limit_custom = custom
+
   return {
     s3: data.s3,
     ssl: data.ssl,
@@ -50,6 +77,35 @@ export function settingsApp(this: AlpineMagic) {
     s3Saving: false,
     sslSaving: false,
     logSaving: false,
+
+    updateDiskLimitMode() {
+      const mode = (this as any).s3.disk_usage_limit_mode
+      if (mode === DiskLimitMode.AUTO) {
+        ;(this as any).s3.disk_usage_limit = DiskLimitMode.AUTO
+      } else if (mode === DiskLimitMode.UNLIMITED) {
+        ;(this as any).s3.disk_usage_limit = '0'
+      } else if (mode === DiskLimitMode.CUSTOM) {
+        const custom = Number((this as any).s3.disk_usage_limit_custom)
+        if (!custom || custom < 1) {
+          // avoid emitting "0" which the backend treats as unlimited
+          ;(this as any).s3.disk_usage_limit = DiskLimitMode.AUTO
+        } else {
+          ;(this as any).s3.disk_usage_limit = String(custom)
+        }
+      }
+    },
+
+    updateDiskLimitCustom() {
+      if ((this as any).s3.disk_usage_limit_mode === DiskLimitMode.CUSTOM) {
+        const custom = Number((this as any).s3.disk_usage_limit_custom)
+        if (!custom || custom < 1) {
+          // avoid emitting "0" which the backend treats as unlimited
+          ;(this as any).s3.disk_usage_limit = DiskLimitMode.AUTO
+        } else {
+          ;(this as any).s3.disk_usage_limit = String(custom)
+        }
+      }
+    },
 
     async saveConfig(
       flag: 's3Saving' | 'sslSaving' | 'logSaving',

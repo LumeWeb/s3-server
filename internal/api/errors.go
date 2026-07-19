@@ -81,6 +81,7 @@ const (
 	TypeDirectoryRequired     ErrorType = "DIRECTORY_REQUIRED"
 	TypeIndexerURLRequired    ErrorType = "INDEXER_URL_REQUIRED"
 	TypeIndexerLocked         ErrorType = "INDEXER_LOCKED"
+	TypeDiskLimitInvalid      ErrorType = "DISK_LIMIT_INVALID"
 	TypeSSLModeInvalid        ErrorType = "SSL_MODE_INVALID"
 	TypeACMEEmailRequired     ErrorType = "ACME_EMAIL_REQUIRED"
 	TypeBackupNotFound        ErrorType = "BACKUP_NOT_FOUND"

@@ -22,7 +22,7 @@ export interface S3ConfigPayload {
   directory: string
   indexer_url: string
   host_bases: string[]
-  disk_usage_limit: number
+  disk_usage_limit: string
   upload_waste_pct: number
 }
 
@@ -31,7 +31,7 @@ export function buildS3ConfigPayload(s3: {
   indexer_selection: string
   custom_indexer: string
   host_bases_input: string
-  disk_usage_limit: number
+  disk_usage_limit: string
   upload_waste_pct: number
 }): S3ConfigPayload {
   const hostBases = s3.host_bases_input

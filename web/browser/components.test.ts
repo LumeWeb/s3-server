@@ -37,7 +37,7 @@ describe('settingsApp', () => {
 
   it('reads settings from script tag', () => {
     document.body.innerHTML = `<script type="application/json" id="settings-data">
-      {"s3":{"directory":"/data","indexer_url":"https://sia.edu","available_indexers":[],"indexer_selection":"","custom_indexer":"","host_bases_input":"a.com","disk_usage_limit":100,"upload_waste_pct":0.2},"ssl":{"mode":"none","acme_email":"","acme_dir_url":""},"log":{"level":"debug","format":"text"}}
+      {"s3":{"directory":"/data","indexer_url":"https://sia.edu","available_indexers":[],"indexer_selection":"","custom_indexer":"","host_bases_input":"a.com","disk_usage_limit":"100","disk_usage_limit_mode":"custom","disk_usage_limit_custom":100,"upload_waste_pct":0.2},"ssl":{"mode":"none","acme_email":"","acme_dir_url":""},"log":{"level":"debug","format":"text"}}
     </script>`
     const c = createComponent(settingsApp)
     expect(c.s3.directory).toBe('/data')
@@ -63,7 +63,9 @@ describe('settingsApp', () => {
       indexer_selection: '__custom__',
       custom_indexer: 'https://custom.indexer',
       host_bases_input: 'a.com, b.com',
-      disk_usage_limit: 200,
+      disk_usage_limit: '200',
+      disk_usage_limit_mode: 'custom',
+      disk_usage_limit_custom: 200,
       upload_waste_pct: 0.15,
       available_indexers: [],
       indexer_url: '',

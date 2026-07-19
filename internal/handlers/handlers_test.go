@@ -357,7 +357,8 @@ func TestServices_SetS3Config(t *testing.T) {
 			{URL: "https://sia.pinner.xyz", Name: "Pinner"},
 			{URL: "https://sia.storage", Name: "Sia Storage"},
 		},
-		HostBases: []string{"s3.example.com"},
+		HostBases:      []string{"s3.example.com"},
+		DiskUsageLimit: config.DefaultDiskUsageLimit,
 	}).Return(nil)
 
 	e := echo.New()

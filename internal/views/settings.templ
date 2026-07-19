@@ -1,12 +1,35 @@
 package views
 
 import (
+	"strconv"
+
 	"go.lumeweb.com/s3-server/internal/config"
 	"go.lumeweb.com/s3-server/internal/updater"
 	"strings"
 
 	"go.lumeweb.com/s3-server/internal/views/components"
 )
+
+func diskUsageLimitMode(limit config.DiskUsageLimit) string {
+	if limit == "" || limit == config.DiskUsageLimitAuto {
+		return "auto"
+	}
+	if limit == config.DiskUsageLimitUnlimited {
+		return "unlimited"
+	}
+	return "custom"
+}
+
+func diskUsageLimitCustom(limit config.DiskUsageLimit) uint64 {
+	if limit == "" || limit == config.DiskUsageLimitAuto || limit == config.DiskUsageLimitUnlimited {
+		return 100
+	}
+	v, err := strconv.ParseUint(string(limit), 10, 64)
+	if err != nil {
+		return 100
+	}
+	return v
+}
 
 templ Settings(csrfToken string, s3Cfg config.S3Config, sslCfg config.SSLConfig, logCfg config.LogConfig, updateStatus updater.UpdateStatus, platformName string, panelVersion string, s3dVersion string) {
 	@PageLayout("Settings", "settings", "", csrfToken, SettingsContent(csrfToken, s3Cfg, sslCfg, logCfg, updateStatus, platformName, panelVersion, s3dVersion))
@@ -37,8 +60,10 @@ templ SettingsContent(csrfToken string, s3Cfg config.S3Config, sslCfg config.SSL
 				"indexer_selection":  s3Cfg.IndexerURL,
 				"custom_indexer":     "",
 				"host_bases_input":   joinHostBases(s3Cfg.HostBases),
-				"disk_usage_limit":   s3Cfg.DiskUsageLimit,
-			"upload_waste_pct":   s3Cfg.UploadWastePct,
+				"disk_usage_limit":        string(s3Cfg.DiskUsageLimit),
+				"disk_usage_limit_mode":   diskUsageLimitMode(s3Cfg.DiskUsageLimit),
+				"disk_usage_limit_custom": diskUsageLimitCustom(s3Cfg.DiskUsageLimit),
+				"upload_waste_pct":        s3Cfg.UploadWastePct,
 			},
 			"ssl": map[string]any{
 				"mode":         sslCfg.Mode,
@@ -83,15 +108,27 @@ templ SettingsContent(csrfToken string, s3Cfg config.S3Config, sslCfg config.SSL
 					Model:       "s3.host_bases_input",
 					Placeholder: "s3.example.com, storage.example.org",
 				})
-				@components.InputField(components.InputFieldOpts{
-					Label:       "Disk Usage Limit (GB)",
-					ID:          "s3-disk-limit",
-					Hint:        "Maximum storage in GB. Leave 0 for unlimited.",
-					Model:       "s3.disk_usage_limit",
-					Type:        "number",
-					Placeholder: "0",
-					Extra:       templ.Attributes{"min": "0", "step": "1"},
-				})
+				@components.FormRow("Disk Usage Limit", "s3-disk-limit", "Auto: uses 80% of total disk capacity. 0: unlimited. Custom: specify a fixed limit in GB.") {
+					@components.Select(diskUsageLimitMode(s3Cfg.DiskUsageLimit), components.SelectOpts{
+						Model: "s3.disk_usage_limit_mode",
+						Extra: templ.Attributes{"id": "s3-disk-limit", "@change": "updateDiskLimitMode()"},
+						Options: []components.SelectOption{
+							{Value: "auto", Label: "Auto"},
+							{Value: "unlimited", Label: "Unlimited (0)"},
+							{Value: "custom", Label: "Custom (GB)"},
+						},
+					})
+					<div x-show="s3.disk_usage_limit_mode === 'custom'" class="mt-2">
+						@components.InputField(components.InputFieldOpts{
+							Label:       "Custom Limit (GB)",
+							ID:          "s3-disk-limit-custom",
+							Model:       "s3.disk_usage_limit_custom",
+							Type:        "number",
+							Placeholder: "100",
+							Extra:       templ.Attributes{"min": "1", "step": "1", "@input": "updateDiskLimitCustom()"},
+						})
+					</div>
+				}
 				@components.InputField(components.InputFieldOpts{
 					Label:       "Upload Waste %",
 					ID:          "s3-upload-waste",

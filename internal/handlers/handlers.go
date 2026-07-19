@@ -86,7 +86,7 @@ type S3ConfigResponse struct {
 	IndexerURL        string                 `json:"indexer_url"`
 	AvailableIndexers []config.IndexerOption `json:"available_indexers"`
 	HostBases         []string               `json:"host_bases"`
-	DiskUsageLimit    uint64                 `json:"disk_usage_limit"`
+	DiskUsageLimit    config.DiskUsageLimit  `json:"disk_usage_limit"`
 	UploadWastePct    float64                `json:"upload_waste_pct"`
 }
 
@@ -95,7 +95,7 @@ type SetS3ConfigRequest struct {
 	IndexerURL        string                 `json:"indexer_url"`
 	AvailableIndexers []config.IndexerOption `json:"available_indexers"`
 	HostBases         []string               `json:"host_bases"`
-	DiskUsageLimit    uint64                 `json:"disk_usage_limit"`
+	DiskUsageLimit    config.DiskUsageLimit  `json:"disk_usage_limit"`
 	UploadWastePct    float64                `json:"upload_waste_pct"`
 }
 

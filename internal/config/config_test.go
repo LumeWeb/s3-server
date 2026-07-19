@@ -397,3 +397,124 @@ func TestSave_AtomicWrite_OriginalIntactOnFailure(t *testing.T) {
 	assert.Equal(t, originalData, currentData,
 		"original file must be unchanged on write failure")
 }
+
+// DiskUsageLimit backward compatibility and new behavior tests.
+
+func TestDiskUsageLimit_Bytes_Auto(t *testing.T) {
+	// Auto mode should compute 80% of total disk capacity.
+	// We can't assert exact values without mocking disk.Usage,
+	// but we can verify it doesn't error and returns hasLimit=true.
+	d := DiskUsageLimitAuto
+	b, hasLimit, err := d.Bytes("/")
+	require.NoError(t, err)
+	assert.True(t, hasLimit)
+	assert.Greater(t, b, uint64(0))
+}
+
+func TestDiskUsageLimit_Bytes_Zero(t *testing.T) {
+	d := DiskUsageLimitUnlimited
+	b, hasLimit, err := d.Bytes("/")
+	require.NoError(t, err)
+	assert.False(t, hasLimit)
+	assert.Equal(t, uint64(0), b)
+}
+
+func TestDiskUsageLimit_Bytes_Numeric(t *testing.T) {
+	d := DiskUsageLimit("100")
+	b, hasLimit, err := d.Bytes("/")
+	require.NoError(t, err)
+	assert.True(t, hasLimit)
+	assert.Equal(t, uint64(100*1024*1024*1024), b)
+}
+
+func TestDiskUsageLimit_Bytes_Empty(t *testing.T) {
+	d := DiskUsageLimit("")
+	b, hasLimit, err := d.Bytes("/")
+	require.NoError(t, err)
+	assert.False(t, hasLimit)
+	assert.Equal(t, uint64(0), b)
+}
+
+func TestDiskUsageLimit_IsAuto(t *testing.T) {
+	assert.True(t, DiskUsageLimitAuto.IsAuto())
+	assert.True(t, DiskUsageLimit("").IsAuto())
+	assert.False(t, DiskUsageLimitUnlimited.IsAuto())
+	assert.False(t, DiskUsageLimit("100").IsAuto())
+}
+
+func TestDiskUsageLimit_IsLimited(t *testing.T) {
+	assert.False(t, DiskUsageLimitAuto.IsLimited())
+	assert.False(t, DiskUsageLimit("").IsLimited())
+	assert.False(t, DiskUsageLimitUnlimited.IsLimited())
+	assert.True(t, DiskUsageLimit("100").IsLimited())
+}
+
+func TestDiskUsageLimit_Load_YAML_Number(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "panel.yml")
+
+	// Old-style config with numeric disk_usage_limit
+	yamlContent := "s3:\n  disk_usage_limit: 100\n"
+	err := os.WriteFile(path, []byte(yamlContent), 0600)
+	require.NoError(t, err)
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, DiskUsageLimit("100"), cfg.S3.DiskUsageLimit)
+}
+
+func TestDiskUsageLimit_Load_YAML_Auto(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "panel.yml")
+
+	yamlContent := "s3:\n  disk_usage_limit: auto\n"
+	err := os.WriteFile(path, []byte(yamlContent), 0600)
+	require.NoError(t, err)
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, DiskUsageLimitAuto, cfg.S3.DiskUsageLimit)
+}
+
+func TestDiskUsageLimit_Load_EnvVar(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "panel.yml")
+
+	err := Save(path, DefaultConfig())
+	require.NoError(t, err)
+
+	t.Setenv("S3_SERVER_S3__DISK_USAGE_LIMIT", "200")
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, DiskUsageLimit("200"), cfg.S3.DiskUsageLimit)
+}
+
+func TestDiskUsageLimit_Load_EnvVar_Auto(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "panel.yml")
+
+	err := Save(path, DefaultConfig())
+	require.NoError(t, err)
+
+	t.Setenv("S3_SERVER_S3__DISK_USAGE_LIMIT", "auto")
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, DiskUsageLimitAuto, cfg.S3.DiskUsageLimit)
+}
+
+func TestDefaultConfig_DiskUsageLimit(t *testing.T) {
+	cfg := DefaultConfig()
+	assert.Equal(t, DiskUsageLimitAuto, cfg.S3.DiskUsageLimit)
+}
+
+// Regression: auto mode must always return hasLimit=true, never (0, false).
+// A previous bug subtracted a fixed threshold; when free space was <= threshold
+// it returned (0, false), silently disabling the limit on small disks.
+func TestDiskUsageLimit_Bytes_Auto_NeverUnlimited(t *testing.T) {
+	d := DiskUsageLimitAuto
+	_, hasLimit, err := d.Bytes("/")
+	require.NoError(t, err)
+	assert.True(t, hasLimit, "auto mode must never return hasLimit=false")
+}
