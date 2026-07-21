@@ -2,6 +2,7 @@ package onboarding
 
 import (
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,7 @@ import (
 	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.lumeweb.com/s3-server/internal/backend"
 	"go.lumeweb.com/s3-server/internal/config"
 )
 
@@ -59,10 +61,11 @@ func TestConfigHandler(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	assert.Equal(t, "https://indexer.example.com", resp.IndexerURL)
 	assert.Len(t, resp.AvailableIndexers, 1)
-	assert.NotEmpty(t, resp.AppID, "AppID must be set (from init)")
-	assert.Equal(t, "S3d", resp.AppName)
-	assert.Equal(t, "A S3-compatible storage service backed by Sia", resp.AppDesc)
-	assert.Equal(t, "https://github.com/Siafoundation/s3d", resp.ServiceURL)
+	meta := backend.SiaAppMetadata()
+	assert.Equal(t, hex.EncodeToString(meta.ID[:]), resp.AppID)
+	assert.Equal(t, meta.Name, resp.AppName)
+	assert.Equal(t, meta.Description, resp.AppDesc)
+	assert.Equal(t, meta.ServiceURL, resp.ServiceURL)
 }
 
 func TestConfigHandler_EmptyIndexers(t *testing.T) {

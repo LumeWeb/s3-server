@@ -24,14 +24,6 @@ import (
 	"golang.org/x/crypto/nacl/box"
 )
 
-// AppID is the Sia application identifier: must match factory.go's types.HashBytes([]byte("s3d")).
-func init() {
-	h := types.HashBytes([]byte("s3d"))
-	AppID = hex.EncodeToString(h[:])
-}
-
-var AppID string
-
 var ErrNotOnboarding = errors.New("onboarding already complete")
 
 type OnboardingState string
@@ -206,14 +198,15 @@ func (svc *Service) PublicKeyHandler(c *echo.Context) error {
 // The app ID, name, and description must match what factory.go uses on the Go side.
 func (svc *Service) ConfigHandler(c *echo.Context) error {
 	s3Cfg := svc.store.S3Config()
+	meta := backend.SiaAppMetadata()
 	return c.JSON(http.StatusOK, ConfigResponse{
 		IndexerURL:        s3Cfg.IndexerURL,
 		AvailableIndexers: s3Cfg.AvailableIndexers,
-		AppID:             AppID,
-		AppName:           "S3d",
-		AppDesc:           "A S3-compatible storage service backed by Sia",
-		LogoURL:           "https://example.com/logo.png",
-		ServiceURL:        "https://github.com/Siafoundation/s3d",
+		AppID:             hex.EncodeToString(meta.ID[:]),
+		AppName:           meta.Name,
+		AppDesc:           meta.Description,
+		LogoURL:           meta.LogoURL,
+		ServiceURL:        meta.ServiceURL,
 		CallbackURL:       "",
 	})
 }
