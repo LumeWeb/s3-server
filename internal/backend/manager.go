@@ -338,11 +338,7 @@ func newAccountClient(sqliteStore S3DStore, s3Cfg config.S3Config, log *zap.Logg
 		return NewNoopAccountClient(log), nil
 	}
 
-	builder := sdk.NewBuilder(indexerURL, sdk.AppMetadata{
-		ID:          types.HashBytes([]byte("s3d")),
-		Name:        "s3-server-panel",
-		Description: "S3 Server panel account monitoring",
-	})
+	builder := sdk.NewBuilder(indexerURL, SiaAppMetadata())
 	sdkClient, err := builder.SDK(appKey, sdk.WithLogger(log.Named("account")))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create account SDK client: %w", err)

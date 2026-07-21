@@ -55,13 +55,7 @@ func (f *s3dFactory) Init(ctx context.Context, s3Cfg config.S3Config, sqliteStor
 		return nil, nil, nil, fmt.Errorf("no indexer URL configured: set s3.indexer_url in panel.yml")
 	}
 
-	builder := sdk.NewBuilder(indexerURL, sdk.AppMetadata{
-		ID:          types.HashBytes([]byte("s3d")),
-		Name:        "S3d",
-		Description: "A S3-compatible storage service backed by Sia",
-		LogoURL:     "https://example.com/logo.png",
-		ServiceURL:  "https://github.com/Siafoundation/s3d",
-	})
+	builder := sdk.NewBuilder(indexerURL, SiaAppMetadata())
 	sdkClient, err := builder.SDK(appKey, sdk.WithLogger(f.log.Named("sdk")))
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to create SDK client: %w", err)
