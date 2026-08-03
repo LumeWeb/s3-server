@@ -1,6 +1,8 @@
 # s3-server
 
-Private S3-compatible storage server backed by the Sia Network. Ships an S3 API, a web admin panel, onboarding flow, and automatic TLS — all in a single binary.
+`s3-server` is a self-hosted S3-compatible storage appliance backed by the Sia network. It combines an S3 API, web-based onboarding, access-key management, monitoring, database backup, and TLS support in a single deployable service.
+
+> **Status: Developer preview.** Suitable for testing and secondary copies. Do not use it as the only copy of critical data.
 
 ## Features
 
@@ -9,55 +11,53 @@ Private S3-compatible storage server backed by the Sia Network. Ships an S3 API,
 - **Onboarding wizard** — first-run setup with admin password, S3 access key generation, and indexer configuration
 - **Access key management** — create/delete S3 access keys, group by user, real-time updates via SSE
 - **User management** — create/delete users, assign access keys per user
-- **Bucket lifecycle** — view buckets, configure versioning and lifecycle rules
-- **Backup & restore** — create and download database backups from the panel
+- **Bucket management** — view buckets, configure versioning and supported lifecycle rules
+- **Metadata database backup** — create and download appliance database backups from the panel
 - **Automatic TLS** — Let's Encrypt via Caddy integration, or bring your own certificates
 - **Update sidecar** — optional auto-update mechanism via flag files on a mounted state volume
 - **Single binary** — Go backend with embedded frontend assets, no external runtime dependencies
 
-## Architecture
-
-```
-cmd/s3-server/        CLI entry point (serve command, flags)
-internal/
-  admin/              s3d admin API client (Prometheus, stats, system)
-  api/                JSON API response helpers and error types
-  auth/               Session-based panel authentication (cookie + bcrypt)
-  backend/            s3d factory, store adapter, S3 handler swapper, backend manager
-  build/              Build metadata (s3d version from go.mod, generated)
-  config/             YAML + env config (koanf), panel.yml schema
-  handlers/           Panel HTTP handlers (keys, users, buckets, backups, pages, SSE, config)
-  onboarding/         First-run setup state machine (robot3 FSM)
-  routes/             Route constants and middleware wiring
-  sse/                Server-Sent Events broker for real-time panel updates
-  ssl/                TLS configuration (none, platform, managed/ACME)
-  status/             Backend health status tracking
-  store/              Panel config persistence, sessions, access key store
-  testutil/           Shared test helpers (test logger)
-  updater/            Update sidecar communication via flag files
-  version/            Version checker (notifies on new releases, never self-applies)
-  views/              Templ templates (server-rendered HTML)
-web/                  Frontend source (Vite bundle: Alpine.js, ky, robot3, libsodium)
-```
-
-## Tech Stack
-
-**Backend:** Go 1.26, Echo v5, templ, s3d, SQLite (via s3d), koanf, zap, samber/lo
-
-**Frontend:** Bun, Vite, Tailwind CSS v4, Alpine.js, ky, robot3, libsodium
-
-**Infrastructure:** Docker (multi-stage build), GitHub Actions CI
-
 ## Getting Started
 
-### Prerequisites
+### Docker quick start
+
+Uses the published image from GitHub Container Registry:
+
+```bash
+docker compose up -d    # Pulls ghcr.io/lumeweb/s3-server:latest, starts on port 8080
+```
+
+To pin a specific version:
+
+```yaml
+# docker-compose.yml override or env
+image: ghcr.io/lumeweb/s3-server:latest    # most recent build
+image: ghcr.io/lumeweb/s3-server:sha-abc123 # specific commit
+```
+
+CI publishes images to GHCR on every push to `develop`. The following tags are available:
+
+| Tag | Description |
+|---|---|
+| `latest` | Most recent develop build |
+| `sha-<short>` | Specific commit hash |
+
+### First-run onboarding
+
+Once the server is running, open `http://localhost:8080`. First run triggers the onboarding wizard.
+
+Complete the wizard to configure an indexer, create the administrator account, and generate your first S3 access key.
+
+### Building from source
+
+#### Prerequisites
 
 - [Go 1.26+](https://go.dev/dl/)
 - [Bun](https://bun.sh/) (package manager + bundler)
 - [templ CLI](https://github.com/a-h/templ) (`go install github.com/a-h/templ/cmd/templ@latest`)
 - GCC (CGO required for SQLite)
 
-### Build
+#### Build
 
 ```bash
 make all    # deps → frontend bundle → CSS → generate → Go binary
@@ -73,7 +73,7 @@ make generate   # Run go:generate + templ generate
 make build      # Compile Go binary → /tmp/s3-server
 ```
 
-### Run
+#### Run
 
 ```bash
 make dev    # Full build + run with test data directory
@@ -85,39 +85,13 @@ Or manually:
 /tmp/s3-server serve --listen-addr 0.0.0.0:8080 --data-dir /tmp/s3-server-test-data
 ```
 
-First run triggers the onboarding wizard at `http://localhost:8080`.
-
-### Docker — Production
-
-Uses the published image from GitHub Container Registry:
-
-```bash
-docker compose up -d    # Pulls ghcr.io/lumeweb/s3-server:latest, starts on port 8080
-```
-
-To pin a specific version:
-
-```yaml
-# docker-compose.yml override or env
-image: ghcr.io/lumeweb/s3-server:develop    # track develop branch
-image: ghcr.io/lumeweb/s3-server:sha-abc123 # specific commit
-```
-
-### Docker — Local Development
+#### Docker — Local Development
 
 Builds from source using the Dockerfile (multi-stage: bun frontend → Go build → runtime):
 
 ```bash
 docker compose -f docker-compose.dev.yml up -d --build
 ```
-
-CI publishes images to GHCR on every push to `develop`. The following tags are available:
-
-| Tag | Description |
-|---|---|
-| `latest` | Latest develop build |
-| `develop` | Same as latest, explicit |
-| `sha-<short>` | Specific commit hash |
 
 ## Configuration
 
@@ -216,25 +190,45 @@ services:
 
 The reverse proxy handles TLS termination and forwards plain HTTP to the container on `--listen-addr` (default `:8080`).
 
-## Testing
+## Current Limitations
 
-### Backend (Go)
+- Developer-preview software; interfaces and configuration may change.
+- S3 compatibility is incomplete and depends on the underlying `s3d` implementation.
+- The appliance stores local configuration and S3 metadata in its data directory; preserve that directory and its backups.
+- Use TLS when connecting over an untrusted network.
 
-```bash
-make test          # Go tests with race detector
-make test-short    # Short mode (skip integration tests)
-make bench         # Go benchmarks with memory allocation stats
-make cover         # Go test coverage report
+## Architecture
+
+```
+cmd/s3-server/        CLI entry point (serve command, flags)
+internal/
+  admin/              s3d admin API client (Prometheus, stats, system)
+  api/                JSON API response helpers and error types
+  auth/               Session-based panel authentication (cookie + bcrypt)
+  backend/            s3d factory, store adapter, S3 handler swapper, backend manager
+  build/              Build metadata (s3d version from go.mod, generated)
+  config/             YAML + env config (koanf), panel.yml schema
+  handlers/           Panel HTTP handlers (keys, users, buckets, backups, pages, SSE, config)
+  onboarding/         First-run setup state machine (robot3 FSM)
+  routes/             Route constants and middleware wiring
+  sse/                Server-Sent Events broker for real-time panel updates
+  ssl/                TLS configuration (none, platform, managed/ACME)
+  status/             Backend health status tracking
+  store/              Panel config persistence, sessions, access key store
+  testutil/           Shared test helpers (test logger)
+  updater/            Update sidecar communication via flag files
+  version/            Version checker (notifies on new releases, never self-applies)
+  views/              Templ templates (server-rendered HTML)
+web/                  Frontend source (Vite bundle: Alpine.js, ky, robot3, libsodium)
 ```
 
-### Frontend (Browser)
+## Tech Stack
 
-```bash
-make test-browser  # Vitest browser tests (real Chromium via Playwright)
-make tsc            # TypeScript type check (zero errors required)
-```
+**Backend:** Go 1.26, Echo v5, templ, s3d, SQLite (via s3d), koanf, zap, samber/lo
 
-All frontend tests run in real Chromium via Playwright — no happy-dom, no MSW. The test suite covers API calls, SSE, onboarding flow, page rendering, and component behavior.
+**Frontend:** Bun, Vite, Tailwind CSS v4, Alpine.js, ky, robot3, libsodium
+
+**Infrastructure:** Docker (multi-stage build), GitHub Actions CI
 
 ## Development
 
@@ -255,6 +249,26 @@ make fmt    # go fmt + templ fmt
 ```bash
 make clean    # Remove binary, dist, generated templ/build files
 ```
+
+## Testing
+
+### Backend (Go)
+
+```bash
+make test          # Go tests with race detector
+make test-short    # Short mode (skip integration tests)
+make bench         # Go benchmarks with memory allocation stats
+make cover         # Go test coverage report
+```
+
+### Frontend (Browser)
+
+```bash
+make test-browser  # Vitest browser tests (real Chromium via Playwright)
+make tsc            # TypeScript type check (zero errors required)
+```
+
+All frontend tests run in real Chromium via Playwright (no happy-dom, no MSW). The suite covers API calls, SSE, onboarding flow, page rendering, and component behavior.
 
 ## CI
 
