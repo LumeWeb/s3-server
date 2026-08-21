@@ -142,14 +142,14 @@ templ SettingsContent(csrfToken string, s3Cfg config.S3Config, sslCfg config.SSL
 				<div
 					class="border-t border-border pt-4 flex items-center justify-between"
 					x-data="flushAllApp"
-					@dialog-confirm.window="$event.detail?.source === 'showFlush' && confirmFlush()"
+					@dialog-confirm.window="$event.detail?.source === 'showFlushAll' && confirmFlush()"
 				>
 					<div>
 						<div class="text-sm text-foreground font-body">Flush all buckets</div>
 						<div class="meta-text">Upload all pending objects immediately.</div>
 					</div>
-					@components.Button("Flush All", components.ButtonOpts{Type: "button", Class: components.Cls("btn-primary", "btn-size-default"), OnClick: "showFlush = true", LoadingProp: "flushing", LoadingLabel: "Flushing…", Disabled: "flushing"})
-					@components.Dialog("showFlush", "Flush all buckets", "Upload all pending objects to the storage network immediately.", "Flush All", components.Cls("btn-primary", "btn-size-default"))
+					@components.Button("Flush All", components.ButtonOpts{Type: "button", Class: components.Cls("btn-primary", "btn-size-default"), OnClick: "showFlushAll = true", LoadingProp: "flushing", LoadingLabel: "Flushing…", Disabled: "flushing"})
+					@components.Dialog("showFlushAll", "Flush all buckets", "Upload all pending objects to the storage network immediately.", "Flush All", components.Cls("btn-primary", "btn-size-default"))
 				</div>
 			</form>
 		}

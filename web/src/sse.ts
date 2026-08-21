@@ -152,6 +152,13 @@ export function initSSE() {
       } catch (_) { /* ignore */ }
     })
 
+    es.addEventListener('flush', (e) => {
+      try {
+        const data = JSON.parse(e.data)
+        window.dispatchEvent(new CustomEvent('sse:flush', { detail: data }))
+      } catch (_) { /* ignore */ }
+    })
+
     es.onerror = () => {
       // EventSource auto-reconnects; no action needed
     }

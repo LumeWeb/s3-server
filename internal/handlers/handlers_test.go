@@ -21,6 +21,7 @@ import (
 	backendMocks "go.lumeweb.com/s3-server/internal/backend/mocks"
 	"go.lumeweb.com/s3-server/internal/config"
 	handlerMocks "go.lumeweb.com/s3-server/internal/handlers/mocks"
+	"go.lumeweb.com/s3-server/internal/sse"
 	"go.lumeweb.com/s3-server/internal/status"
 	storeMocks "go.lumeweb.com/s3-server/internal/store/mocks"
 	"go.lumeweb.com/s3-server/internal/testutil"
@@ -44,6 +45,7 @@ func newTestServices(t *testing.T) (*Services, *storeMocks.MockStore, *handlerMo
 	broker.Test(t)
 	broker.On("NotifyKeyChange", mock.Anything, mock.Anything).Return().Maybe()
 	broker.On("NotifyBucketChange", mock.Anything, mock.Anything).Return().Maybe()
+	broker.On("PublishFlush", mock.Anything).Return(nil).Maybe()
 	svc := NewServices(ServicesConfig{
 		Store:     mockStore,
 		Restarter: restarter,
@@ -67,6 +69,7 @@ func newTestServicesWithBroker(t *testing.T) (*Services, *storeMocks.MockStore, 
 	broker.Test(t)
 	broker.On("NotifyKeyChange", mock.Anything, mock.Anything).Return().Maybe()
 	broker.On("NotifyBucketChange", mock.Anything, mock.Anything).Return().Maybe()
+	broker.On("PublishFlush", mock.Anything).Return(nil).Maybe()
 	svc := NewServices(ServicesConfig{
 		Store:     mockStore,
 		Restarter: restarter,
@@ -919,14 +922,35 @@ func TestServices_SystemFlush(t *testing.T) {
 	mockBackend := backendMocks.NewMockBackend(t)
 	svc.backend = func() backend.Backend { return mockBackend }
 
-	mockBackend.On("FlushObjects", mock.Anything).Return(nil)
+	done := make(chan struct{})
+	mockBackend.On("FlushObjects", mock.Anything).Return(nil).Once().
+		Run(func(mock.Arguments) { close(done) })
 
 	e := echo.New()
 	c, rec := testContext(e, http.MethodPost, "/api/system/flush")
 
 	err := svc.systemFlush(c)
 	require.NoError(t, err)
-	assert.Equal(t, http.StatusNoContent, rec.Code)
+	require.Equal(t, http.StatusAccepted, rec.Code)
+
+	// Response reports that flushing started (async).
+	var resp FlushStatusResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Equal(t, string(sse.FlushStatusRunning), resp.Status)
+
+	// The async flush must invoke FlushObjects.
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("async flush did not invoke FlushObjects in time")
+	}
+
+	// And eventually transition to complete.
+	require.Eventually(t, func() bool {
+		svc.flushMu.Lock()
+		defer svc.flushMu.Unlock()
+		return svc.flushStatus == sse.FlushStatusComplete
+	}, time.Second, 10*time.Millisecond)
 }
 
 func TestServices_SystemFlush_BackendNotReady(t *testing.T) {
@@ -946,14 +970,69 @@ func TestServices_SystemFlush_Error(t *testing.T) {
 	mockBackend := backendMocks.NewMockBackend(t)
 	svc.backend = func() backend.Backend { return mockBackend }
 
-	mockBackend.On("FlushObjects", mock.Anything).Return(assert.AnError)
+	mockBackend.On("FlushObjects", mock.Anything).Return(assert.AnError).Once()
 
 	e := echo.New()
 	c, rec := testContext(e, http.MethodPost, "/api/system/flush")
 
 	err := svc.systemFlush(c)
 	require.NoError(t, err)
-	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+	require.Equal(t, http.StatusAccepted, rec.Code)
+
+	// The async flush reports an error after FlushObjects fails.
+	require.Eventually(t, func() bool {
+		svc.flushMu.Lock()
+		defer svc.flushMu.Unlock()
+		return svc.flushStatus == sse.FlushStatusError
+	}, time.Second, 10*time.Millisecond)
+}
+
+func TestServices_SystemFlush_AlreadyRunning(t *testing.T) {
+	svc, _, _, _ := newTestServices(t)
+	mockBackend := backendMocks.NewMockBackend(t)
+	svc.backend = func() backend.Backend { return mockBackend }
+
+	// Simulate a flush already in progress.
+	svc.flushMu.Lock()
+	svc.flushStatus = sse.FlushStatusRunning
+	svc.flushMu.Unlock()
+
+	e := echo.New()
+	c, rec := testContext(e, http.MethodPost, "/api/system/flush")
+
+	err := svc.systemFlush(c)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusConflict, rec.Code)
+
+	// No new flush should be triggered.
+	mockBackend.AssertNotCalled(t, "FlushObjects", mock.Anything)
+}
+
+func TestServices_GetFlushStatus_ReadOnly(t *testing.T) {
+	svc, _, _, _ := newTestServices(t)
+
+	svc.flushMu.Lock()
+	svc.flushStatus = sse.FlushStatusComplete
+	svc.flushErr = "something went wrong"
+	svc.flushMu.Unlock()
+
+	e := echo.New()
+	c, rec := testContext(e, http.MethodGet, "/api/system/flush")
+
+	err := svc.getFlushStatus(c)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp FlushStatusResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Equal(t, string(sse.FlushStatusComplete), resp.Status)
+	assert.Equal(t, "something went wrong", resp.Message)
+
+	// GET is read-only: status is NOT reset after being read.
+	svc.flushMu.Lock()
+	assert.Equal(t, string(sse.FlushStatusComplete), string(svc.flushStatus))
+	assert.Equal(t, "something went wrong", svc.flushErr)
+	svc.flushMu.Unlock()
 }
 
 func TestServices_SystemRestart(t *testing.T) {
@@ -1083,6 +1162,7 @@ func TestServices_DeleteKey_Concurrent_LastKey(t *testing.T) {
 	broker := &handlerMocks.MockSSEBroker{}
 	broker.Test(t)
 	broker.On("NotifyKeyChange", mock.Anything, mock.Anything).Return().Maybe()
+	broker.On("PublishFlush", mock.Anything).Return(nil).Maybe()
 	svc := NewServices(ServicesConfig{
 		Log:       log,
 		SSEBroker: broker,
@@ -1162,6 +1242,7 @@ func TestServices_KeyMutation_LockReleasedDuringRestart(t *testing.T) {
 	broker := &handlerMocks.MockSSEBroker{}
 	broker.Test(t)
 	broker.On("NotifyKeyChange", mock.Anything, mock.Anything).Return().Maybe()
+	broker.On("PublishFlush", mock.Anything).Return(nil).Maybe()
 
 	// slowRestarter blocks until released, simulating a slow backend restart
 	r := &slowRestarter{done: make(chan struct{})}
