@@ -470,6 +470,11 @@ func runServe(c *cli.Context) error {
 		s3Root, cancel = ssl.BucketCreateMiddleware(s3Handler, sslMgr, cfg.S3.HostBases, log)
 		defer cancel()
 	}
+
+	// Redirect anonymous GET / to the panel. Authenticated, presigned, and
+	// virtual-host style S3 requests still reach the S3 handler.
+	s3Root = handlers.RootToPanelRedirect(s3Root, cfg.S3.HostBases)
+
 	mux.Handle("/", s3Root) // Everything else goes to S3
 
 	var httpServer, httpsServer *http.Server
