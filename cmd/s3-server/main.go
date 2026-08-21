@@ -207,7 +207,11 @@ func runServe(c *cli.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to init onboarding service: %w", err)
 	}
-	onboardingSvc.SetContext(c.Context)
+	// initCtx is cancelled on shutdown so the async backend init retry loop
+	// (both cold-start and onboarding paths) can never block Cleanup's
+	// initWg.Wait() from returning.
+	initCtx, stopInit := context.WithCancel(c.Context)
+	onboardingSvc.SetContext(initCtx)
 
 	// sse broker for real-time dashboard updates
 	sseBroker := sse.NewBroker(stor, be.Status, be.KeyStore, log)
@@ -231,7 +235,7 @@ func runServe(c *cli.Context) error {
 	// credentials. The user can retry from the dashboard. Resetting
 	// would destroy valid production access keys on a transient failure.
 	if stor.OnboardingState() == string(onboarding.StateComplete) {
-		be.InitFromConfigAsync(c.Context, func() {
+		be.InitFromConfigAsync(initCtx, func() {
 			log.Error("async backend init failed on cold start; onboarding state preserved")
 		})
 	}
@@ -565,6 +569,10 @@ func runServe(c *cli.Context) error {
 			log.Error("HTTPS shutdown error", zap.Error(err))
 		}
 	}
+
+	// stop the async backend init retry loop so Cleanup's initWg.Wait()
+	// returns promptly even if the backend never initialized.
+	stopInit()
 
 	// cleanup s3d backend
 	be.Cleanup()
