@@ -1,3 +1,5 @@
+pkgname: mocks
+filename: '{{.InterfaceName}}.go'
 template: testify
 template-data:
   unroll-variadic: true
