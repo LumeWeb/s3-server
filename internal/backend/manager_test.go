@@ -3,6 +3,8 @@ package backend
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"sync"
@@ -141,6 +143,28 @@ func (b *stubBackend) Close() error {
 	return nil
 }
 
+// stubAccountClient tracks whether Close was called so tests can assert that
+// superseded init attempts release the SDK account client (no leak).
+type stubAccountClient struct {
+	mu          sync.Mutex
+	closeCalled bool
+}
+
+func (c *stubAccountClient) Account(ctx context.Context) (AccountInfo, error) {
+	return AccountInfo{}, nil
+}
+func (c *stubAccountClient) Close() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.closeCalled = true
+	return nil
+}
+func (c *stubAccountClient) Closed() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.closeCalled
+}
+
 // stubS3Swapper implements S3Swapper for testing without importing handlers.
 type stubS3Swapper struct {
 	mu      sync.Mutex
@@ -160,9 +184,9 @@ type stubStore struct {
 	s3Cfg config.S3Config
 }
 
-func (s *stubStore) Config() config.PanelConfig          { return s.cfg }
-func (s *stubStore) DataDir() string                     { return "" }
-func (s *stubStore) ResetTokenPath() string              { return "" }
+func (s *stubStore) Config() config.PanelConfig { return s.cfg }
+func (s *stubStore) DataDir() string            { return "" }
+func (s *stubStore) ResetTokenPath() string     { return "" }
 func (s *stubStore) S3Config() config.S3Config {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -616,38 +640,56 @@ func TestManager_InitAfterOnboarding_Success_ClearsStarting(t *testing.T) {
 // Regression for Kody finding: onInitFailure was registered but never called.
 func TestManager_InitAfterOnboarding_Error_CallsOnInitFailure(t *testing.T) {
 	t.Run("no access keys", func(t *testing.T) {
-		m, st, _, _ := newTestManager(t)
-		st.s3Cfg = config.S3Config{}
+		m, st, factory, _ := newTestManager(t)
+		st.s3Cfg = config.S3Config{Directory: "/tmp/s3d"}
 
 		var failureCalled atomic.Bool
-		stubStore := &stubS3DStore{accessKeys: []AccessKeyInfo{}}
-		m.InitAfterOnboardingAsync(context.Background(), stubStore, func() { failureCalled.Store(true) })
+		factory.openDBFn = func(dbPath string) (S3DStore, error) {
+			return &stubS3DStore{accessKeys: []AccessKeyInfo{}}, nil
+		}
+		m.InitAfterOnboardingAsync(context.Background(), nil, func() { failureCalled.Store(true) })
 		m.initWg.Wait()
 		require.NotEmpty(t, m.InitError())
 
 		assert.True(t, failureCalled.Load(), "onFailure must be called on error")
 	})
 
-	t.Run("factory init error", func(t *testing.T) {
+	t.Run("factory init error is retried, not terminal", func(t *testing.T) {
 		m, st, factory, _ := newTestManager(t)
 		st.s3Cfg = config.S3Config{Directory: "/tmp/s3d"}
 
+		factory.openDBFn = func(dbPath string) (S3DStore, error) {
+			return &stubS3DStore{accessKeys: []AccessKeyInfo{
+				{AccessKeyID: "AKIA123", SecretKey: testSecretKey(), UserName: testUser},
+			}}, nil
+		}
 		var failureCalled atomic.Bool
-		stubStore := &stubS3DStore{accessKeys: []AccessKeyInfo{
-			{AccessKeyID: "AKIA123", SecretKey: testSecretKey(), UserName: testUser},
-		}}
 		factory.initFn = func(ctx context.Context, cfg config.S3Config, store S3DStore) (Backend, http.Handler, func(), error) {
-			return nil, nil, nil, errors.New("init failed")
+			return nil, nil, nil, errors.New("failed to check app auth: connection refused")
 		}
 
-		m.InitAfterOnboardingAsync(context.Background(), stubStore, func() { failureCalled.Store(true) })
-		m.initWg.Wait()
-		assert.True(t, failureCalled.Load(), "onFailure must be called on factory init error")
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		m.InitAfterOnboardingAsync(ctx, nil, func() { failureCalled.Store(true) })
+
+		// A transient factory error must not be treated as terminal: it is
+		// retried (status stays starting) and onFailure is not called.
+		time.Sleep(50 * time.Millisecond)
+		assert.False(t, failureCalled.Load(), "onFailure must not be called for a retryable error")
+		assert.Equal(t, status.Starting, m.Status(), "status must stay starting while retrying")
+
+		// Cancelling the context stops the retry loop without onFailure.
+		cancel()
+		require.Eventually(t, func() bool {
+			return m.Status() != status.Starting
+		}, 2*time.Second, 10*time.Millisecond)
+		assert.False(t, failureCalled.Load(), "onFailure must not be called on context cancel")
 	})
 }
 
-// TestManager_FailInit verifies that failInit clears the starting flag,
-// sets initError, and calls onInitFailure.
+// TestManager_RecordInitFailure verifies that recordInitFailure clears the
+// starting flag, sets initError, and calls onFailure.
 func TestManager_FailInit(t *testing.T) {
 	m, _, _, _ := newTestManager(t)
 
@@ -656,11 +698,11 @@ func TestManager_FailInit(t *testing.T) {
 	m.starting = true
 	m.mu.Unlock()
 
-	m.failInit("test error: something went wrong", func() { failureCalled.Store(true) })
+	m.recordInitFailure("test error: something went wrong", func() { failureCalled.Store(true) })
 
-	assert.Equal(t, status.Error, m.Status(), "status must be Error after failInit")
+	assert.Equal(t, status.Error, m.Status(), "status must be Error after recordInitFailure")
 	assert.Contains(t, m.InitError(), "test error")
-	assert.True(t, failureCalled.Load(), "onInitFailure must be called after failInit")
+	assert.True(t, failureCalled.Load(), "onFailure must be called after recordInitFailure")
 }
 
 // TestManager_InitFromConfigAsync_Panic_RecoversAndFails verifies that
@@ -738,9 +780,9 @@ func (s *failingListKeysStore) AppKey() (types.PrivateKey, string, error) {
 func (s *failingListKeysStore) SetAppKey(key types.PrivateKey, indexerURL string) error {
 	return nil
 }
-func (s *failingListKeysStore) CreateUser(name string) error     { return nil }
-func (s *failingListKeysStore) DeleteUser(name string) error     { return nil }
-func (s *failingListKeysStore) ListUsers() ([]string, error)     { return nil, nil }
+func (s *failingListKeysStore) CreateUser(name string) error { return nil }
+func (s *failingListKeysStore) DeleteUser(name string) error { return nil }
+func (s *failingListKeysStore) ListUsers() ([]string, error) { return nil, nil }
 func (s *failingListKeysStore) CreateAccessKey(userName, accessKeyID, secretKey string) error {
 	return nil
 }
@@ -817,15 +859,17 @@ func TestManager_InitAfterOnboardingAsync_TracksInitWg(t *testing.T) {
 	st.s3Cfg = config.S3Config{Directory: "/tmp/s3d"}
 
 	gate := make(chan struct{})
+	factory.openDBFn = func(dbPath string) (S3DStore, error) {
+		return &stubS3DStore{accessKeys: []AccessKeyInfo{
+			{AccessKeyID: "AKIA123", SecretKey: testSecretKey(), UserName: testUser},
+		}}, nil
+	}
 	factory.initFn = func(ctx context.Context, cfg config.S3Config, store S3DStore) (Backend, http.Handler, func(), error) {
 		<-gate
 		return &stubBackend{}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), func() {}, nil
 	}
 
-	stubStore := &stubS3DStore{accessKeys: []AccessKeyInfo{
-		{AccessKeyID: "AKIA123", SecretKey: testSecretKey(), UserName: testUser},
-	}}
-	m.InitAfterOnboardingAsync(context.Background(), stubStore, nil)
+	m.InitAfterOnboardingAsync(context.Background(), nil, nil)
 
 	// Cleanup should block while the goroutine is still running
 	done := make(chan struct{})
@@ -856,19 +900,20 @@ func TestManager_InitAfterOnboardingAsync_ContextCancellation(t *testing.T) {
 	m, st, factory, _ := newTestManager(t)
 	st.s3Cfg = config.S3Config{Directory: "/tmp/s3d"}
 
+	factory.openDBFn = func(dbPath string) (S3DStore, error) {
+		return &stubS3DStore{accessKeys: []AccessKeyInfo{
+			{AccessKeyID: "AKIA123", SecretKey: testSecretKey(), UserName: testUser},
+		}}, nil
+	}
 	factory.initFn = func(ctx context.Context, cfg config.S3Config, store S3DStore) (Backend, http.Handler, func(), error) {
 		t.Fatal("factory.Init should not be called when context is cancelled")
 		return nil, nil, nil, nil
 	}
 
-	stubStore := &stubS3DStore{accessKeys: []AccessKeyInfo{
-		{AccessKeyID: "AKIA123", SecretKey: testSecretKey(), UserName: testUser},
-	}}
-
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel before launch
 
-	m.InitAfterOnboardingAsync(ctx, stubStore, nil)
+	m.InitAfterOnboardingAsync(ctx, nil, nil)
 
 	require.Eventually(t, func() bool {
 		return m.Status() != status.Starting
@@ -884,25 +929,27 @@ func TestManager_InitAfterOnboardingAsync_ContextCancel_ClosesStore(t *testing.T
 	m, st, factory, _ := newTestManager(t)
 	st.s3Cfg = config.S3Config{Directory: "/tmp/s3d"}
 
+	// The async init reopens the DB from its path each attempt, so the
+	// reopened handle is the one that must be closed on context cancel.
+	reopened := &stubS3DStore{accessKeys: []AccessKeyInfo{
+		{AccessKeyID: "AKIA123", SecretKey: testSecretKey(), UserName: testUser},
+	}}
+	factory.openDBFn = func(dbPath string) (S3DStore, error) { return reopened, nil }
 	factory.initFn = func(ctx context.Context, cfg config.S3Config, store S3DStore) (Backend, http.Handler, func(), error) {
 		t.Fatal("factory.Init should not be called when context is cancelled")
 		return nil, nil, nil, nil
 	}
 
-	stubStore := &stubS3DStore{accessKeys: []AccessKeyInfo{
-		{AccessKeyID: "AKIA123", SecretKey: testSecretKey(), UserName: testUser},
-	}}
-
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	m.InitAfterOnboardingAsync(ctx, stubStore, nil)
+	m.InitAfterOnboardingAsync(ctx, nil, nil)
 
 	require.Eventually(t, func() bool {
 		return m.Status() != status.Starting
 	}, 2*time.Second, 10*time.Millisecond)
 
-	assert.Equal(t, int32(1), stubStore.closeCount.Load(),
+	assert.Equal(t, int32(1), reopened.closeCount.Load(),
 		"store must be closed once when context is cancelled before init")
 }
 
@@ -956,10 +1003,7 @@ func TestManager_InitAfterOnboardingAsync_SerializedWithRestart(t *testing.T) {
 		return &stubBackend{}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), func() {}, nil
 	}
 
-	stubStore := &stubS3DStore{accessKeys: []AccessKeyInfo{
-		{AccessKeyID: "AKIA123", SecretKey: testSecretKey(), UserName: testUser},
-	}}
-	m.InitAfterOnboardingAsync(context.Background(), stubStore, nil)
+	m.InitAfterOnboardingAsync(context.Background(), nil, nil)
 
 	time.Sleep(50 * time.Millisecond)
 
@@ -991,8 +1035,10 @@ func TestManager_InitFromConfigAsync_OnFailureCalledOnce(t *testing.T) {
 	m, st, factory, _ := newTestManager(t)
 	st.s3Cfg = config.S3Config{Directory: "/tmp/s3d"}
 
+	// A genuinely permanent open failure (permission-denied) is terminal; a
+	// transient SQLite lock/busy is retried (see TestManager_..._SelfHealsOnLockedDB).
 	factory.openDBFn = func(dbPath string) (S3DStore, error) {
-		return nil, assert.AnError
+		return nil, errors.New("failed to open database: permission denied")
 	}
 
 	var failureCount atomic.Int32
@@ -1071,15 +1117,16 @@ func TestManager_InitAfterOnboardingAsync_Panic_RecoversAndFails(t *testing.T) {
 	m, st, factory, _ := newTestManager(t)
 	st.s3Cfg = config.S3Config{Directory: "/tmp/s3d"}
 
+	reopened := &stubS3DStore{accessKeys: []AccessKeyInfo{
+		{AccessKeyID: "AKIA123", SecretKey: testSecretKey(), UserName: testUser},
+	}}
+	factory.openDBFn = func(dbPath string) (S3DStore, error) { return reopened, nil }
 	factory.initFn = func(ctx context.Context, cfg config.S3Config, store S3DStore) (Backend, http.Handler, func(), error) {
 		panic("factory.Init panic: nil pointer")
 	}
 
 	var failureCalled atomic.Bool
-	stubStore := &stubS3DStore{accessKeys: []AccessKeyInfo{
-		{AccessKeyID: "AKIA123", SecretKey: testSecretKey(), UserName: testUser},
-	}}
-	m.InitAfterOnboardingAsync(context.Background(), stubStore, func() {
+	m.InitAfterOnboardingAsync(context.Background(), nil, func() {
 		failureCalled.Store(true)
 	})
 
@@ -1090,8 +1137,8 @@ func TestManager_InitAfterOnboardingAsync_Panic_RecoversAndFails(t *testing.T) {
 	assert.Equal(t, status.Error, m.Status(), "status must be Error after panic recovery")
 	assert.Contains(t, m.InitError(), "panic")
 	assert.True(t, failureCalled.Load(), "onFailure must be called after panic recovery")
-	assert.Equal(t, int32(1), stubStore.closeCount.Load(),
-		"store must be closed once by panic recovery")
+	assert.Equal(t, int32(1), reopened.closeCount.Load(),
+		"reopened store must be closed once by panic recovery")
 }
 
 // TestManager_InitFromConfigAsync_Panic_InInitCore_FailInitCalledOnce
@@ -1126,6 +1173,39 @@ func TestManager_InitFromConfigAsync_Panic_InInitCore_FailInitCalledOnce(t *test
 		"onFailure must be called exactly once — not twice — on initCore panic")
 	assert.Equal(t, int32(1), stubStore.closeCount.Load(),
 		"store must be closed exactly once by initCore's panic recovery")
+}
+
+// TestManager_runInitAttempt_ReleasesLockOnPanic verifies that restartMu
+// is released via defer even when the init attempt panics and re-panics, so
+// a subsequent init/restart never deadlocks.
+// Regression for Kody finding: runAsyncInit's explicit unlock was skipped on
+// the panic path, leaving restartMu permanently locked.
+func TestManager_runInitAttempt_ReleasesLockOnPanic(t *testing.T) {
+	m, _, _, _ := newTestManager(t)
+
+	// First attempt panics; runInitAttempt must re-panic but release the lock.
+	assert.Panics(t, func() {
+		_ = m.runInitAttempt(context.Background(), func(ctx context.Context) error {
+			panic("init panic")
+		})
+	})
+
+	// A subsequent attempt must acquire the lock promptly (i.e. not deadlock).
+	require.Eventually(t, func() bool {
+		acquired := make(chan struct{})
+		go func() {
+			defer close(acquired)
+			_ = m.runInitAttempt(context.Background(), func(ctx context.Context) error {
+				return nil
+			})
+		}()
+		select {
+		case <-acquired:
+			return true
+		case <-time.After(time.Second):
+			return false
+		}
+	}, 2*time.Second, 10*time.Millisecond)
 }
 
 // TestManager_Cleanup_DuringAsyncInit verifies that Cleanup waits for
@@ -1241,6 +1321,591 @@ func TestManager_RestartFailure_DoesNotReplayStaleOnFailure(t *testing.T) {
 		"stale onFailure must not replay on Restart failure after successful init")
 }
 
+// TestManager_InitFromConfigAsync_SelfHeals verifies that a transient
+// indexer/connection failure is retried with backoff until it succeeds,
+// without ever going terminal or firing onFailure — the fix for requiring a
+// manual restart after the indexer connection drops at startup.
+func TestManager_InitFromConfigAsync_SelfHeals(t *testing.T) {
+	m, st, factory, _ := newTestManager(t)
+	st.s3Cfg = config.S3Config{Directory: "/tmp/s3d"}
+
+	stubStore := &stubS3DStore{accessKeys: []AccessKeyInfo{
+		{AccessKeyID: "AKIA123", SecretKey: testSecretKey(), UserName: testUser},
+	}}
+	factory.openDBFn = func(dbPath string) (S3DStore, error) { return stubStore, nil }
+
+	var attempts atomic.Int32
+	factory.initFn = func(ctx context.Context, cfg config.S3Config, store S3DStore) (Backend, http.Handler, func(), error) {
+		// Fail the first few attempts (indexer down), then recover.
+		if attempts.Add(1) <= 2 {
+			return nil, nil, nil, errors.New("failed to check app auth: connection refused")
+		}
+		return &stubBackend{}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), func() {}, nil
+	}
+
+	var onFailureCalled atomic.Bool
+	// Use a millisecond-scale backoff so the test doesn't wait on the
+	// production 5s base delay.
+	m.retryDelay = func(attempt int) time.Duration { return 5 * time.Millisecond }
+	m.InitFromConfigAsync(context.Background(), func() { onFailureCalled.Store(true) })
+
+	require.Eventually(t, func() bool {
+		return m.Status() == status.Running
+	}, 2*time.Second, 10*time.Millisecond)
+
+	assert.False(t, onFailureCalled.Load(), "onFailure must not fire when init self-heals")
+	assert.GreaterOrEqual(t, attempts.Load(), int32(3), "init must have been retried")
+	assert.Empty(t, m.InitError(), "initError must be cleared on success")
+}
+
+// TestManager_InitAfterOnboardingAsync_SelfHeals verifies that a transient
+// factory failure during async onboarding is retried with backoff until it
+// succeeds, and that each attempt REOPENS the database from its path rather
+// than reusing a store closed by a previous failed attempt.
+// Regression for Kody finding: the retry loop reused the same closed
+// sqliteStore pointer, so "sql: database is closed" looped forever.
+func TestManager_InitAfterOnboardingAsync_SelfHeals(t *testing.T) {
+	m, st, factory, _ := newTestManager(t)
+	st.s3Cfg = config.S3Config{Directory: "/tmp/s3d"}
+
+	// Each attempt must reopen the DB from path, so track the open count.
+	var openCount atomic.Int32
+	factory.openDBFn = func(dbPath string) (S3DStore, error) {
+		openCount.Add(1)
+		return &stubS3DStore{accessKeys: []AccessKeyInfo{
+			{AccessKeyID: "AKIA123", SecretKey: testSecretKey(), UserName: testUser},
+		}}, nil
+	}
+
+	var attempts atomic.Int32
+	factory.initFn = func(ctx context.Context, cfg config.S3Config, store S3DStore) (Backend, http.Handler, func(), error) {
+		if attempts.Add(1) <= 2 {
+			return nil, nil, nil, errors.New("failed to check app auth: connection refused")
+		}
+		return &stubBackend{}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), func() {}, nil
+	}
+
+	m.retryDelay = func(attempt int) time.Duration { return 5 * time.Millisecond }
+
+	var onFailureCalled atomic.Bool
+	m.InitAfterOnboardingAsync(context.Background(), nil, func() { onFailureCalled.Store(true) })
+
+	require.Eventually(t, func() bool {
+		return m.Status() == status.Running
+	}, 2*time.Second, 10*time.Millisecond)
+
+	assert.False(t, onFailureCalled.Load(), "onFailure must not fire when init self-heals")
+	assert.GreaterOrEqual(t, attempts.Load(), int32(3), "init must have been retried")
+	assert.GreaterOrEqual(t, openCount.Load(), int32(3),
+		"database must be reopened on every attempt, not reusing a closed handle")
+	assert.Empty(t, m.InitError(), "initError must be cleared on success")
+}
+
+// TestManager_InitFromConfigAsync_SelfHealsOnLockedDB verifies that a
+// transient SQLite "database is locked" open failure is treated as retryable
+// (not terminal) and self-heals once the lock clears.
+// Regression for Kody finding: isTerminalInitError matched "failed to open
+// database" and classified lock/busy (which factory.OpenDatabase prefixes with
+// that string) as terminal, forcing a manual restart for a transient condition.
+func TestManager_InitFromConfigAsync_SelfHealsOnLockedDB(t *testing.T) {
+	m, st, factory, _ := newTestManager(t)
+	st.s3Cfg = config.S3Config{Directory: "/tmp/s3d"}
+
+	var openAttempts atomic.Int32
+	factory.openDBFn = func(dbPath string) (S3DStore, error) {
+		if openAttempts.Add(1) <= 2 {
+			return nil, errors.New("failed to open database: database is locked")
+		}
+		return &stubS3DStore{accessKeys: []AccessKeyInfo{
+			{AccessKeyID: "AKIA123", SecretKey: testSecretKey(), UserName: testUser},
+		}}, nil
+	}
+	factory.initFn = func(ctx context.Context, cfg config.S3Config, store S3DStore) (Backend, http.Handler, func(), error) {
+		return &stubBackend{}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), func() {}, nil
+	}
+
+	var onFailureCalled atomic.Bool
+	m.retryDelay = func(attempt int) time.Duration { return 5 * time.Millisecond }
+	m.InitFromConfigAsync(context.Background(), func() { onFailureCalled.Store(true) })
+
+	require.Eventually(t, func() bool {
+		return m.Status() == status.Running
+	}, 2*time.Second, 10*time.Millisecond)
+
+	assert.False(t, onFailureCalled.Load(), "onFailure must not fire; locked DB is transient")
+	assert.GreaterOrEqual(t, openAttempts.Load(), int32(3), "open must have been retried")
+	assert.Empty(t, m.InitError(), "initError must be cleared on success")
+}
+
+// TestManager_InitFromConfigAsync_StaleTerminal_DoesNotFireOnFailure verifies
+// that a terminal failure surfaced by the async retry loop after a concurrent
+// successful Restart already brought the backend to Running does NOT fire
+// onFailure (which for onboarding wipes access keys and reverts onboarding).
+// Regression for Kody finding: the terminal/budget branches lacked the
+// stillStarting guard the panic branch has.
+func TestManager_InitFromConfigAsync_StaleTerminal_DoesNotFireOnFailure(t *testing.T) {
+	m, st, factory, _ := newTestManager(t)
+	st.s3Cfg = config.S3Config{Directory: "/tmp/s3d"}
+
+	stubStore := &stubS3DStore{accessKeys: []AccessKeyInfo{
+		{AccessKeyID: "AKIA123", SecretKey: testSecretKey(), UserName: testUser},
+	}}
+	factory.openDBFn = func(dbPath string) (S3DStore, error) { return stubStore, nil }
+
+	// First attempt fails transiently (indexer down); later attempts would
+	// hit a terminal failure.
+	var attempt atomic.Int32
+	factory.initFn = func(ctx context.Context, cfg config.S3Config, store S3DStore) (Backend, http.Handler, func(), error) {
+		if attempt.Add(1) == 1 {
+			return nil, nil, nil, errors.New("failed to check app auth: connection refused")
+		}
+		return nil, nil, nil, errors.New("no access keys")
+	}
+
+	// Gate the first backoff sleep so we can interleave a concurrent success.
+	enteredBackoff := make(chan struct{})
+	releaseBackoff := make(chan struct{})
+	var backoffUsed atomic.Bool
+	m.retryDelay = func(attempt int) time.Duration {
+		if backoffUsed.CompareAndSwap(false, true) {
+			close(enteredBackoff)
+			<-releaseBackoff
+		}
+		return time.Millisecond
+	}
+
+	var onFailureCalled atomic.Bool
+	m.InitFromConfigAsync(context.Background(), func() { onFailureCalled.Store(true) })
+
+	// Wait until the async loop has failed once and is parked in backoff.
+	<-enteredBackoff
+
+	// Simulate a concurrent successful Restart bringing the backend to Running
+	// (swapBackend clears starting and sets the backend).
+	m.swapBackend(&stubBackend{}, stubStore, func() {}, nil,
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	require.Equal(t, status.Running, m.Status())
+
+	// Release the retry loop; its next attempt hits a terminal error, but the
+	// backend is already Running so onFailure must not fire.
+	close(releaseBackoff)
+
+	// Give the loop time to run its terminal attempt.
+	time.Sleep(300 * time.Millisecond)
+	assert.False(t, onFailureCalled.Load(),
+		"onFailure must not fire after a concurrent successful restart")
+}
+
+// TestManager_InitFromConfigAsync_SupersededSuccess_DoesNotSwapBackend
+// verifies that once a concurrent successful Restart brings the backend to
+// Running while the retry loop is parked in backoff, the loop short-circuits
+// at the top of its next iteration and stops without running a further
+// initCore against the live store, leaving the concurrently-started backend
+// untouched. Regression for Kody findings: the success path used to swap in a
+// stale backend, and the loop used to keep churning full init attempts.
+func TestManager_InitFromConfigAsync_SupersededSuccess_DoesNotSwapBackend(t *testing.T) {
+	m, st, factory, _ := newTestManager(t)
+	st.s3Cfg = config.S3Config{Directory: "/tmp/s3d"}
+
+	stubStore := &stubS3DStore{accessKeys: []AccessKeyInfo{
+		{AccessKeyID: "AKIA123", SecretKey: testSecretKey(), UserName: testUser},
+	}}
+	factory.openDBFn = func(dbPath string) (S3DStore, error) { return stubStore, nil }
+
+	// Track full initCore attempts to confirm the loop short-circuits before
+	// running another against the live store once the backend is Running.
+	var attempt atomic.Int32
+	factory.initFn = func(ctx context.Context, cfg config.S3Config, store S3DStore) (Backend, http.Handler, func(), error) {
+		if attempt.Add(1) == 1 {
+			return nil, nil, nil, errors.New("failed to check app auth: connection refused")
+		}
+		return &stubBackend{}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), func() {}, nil
+	}
+
+	// Gate the first backoff sleep so we can interleave a concurrent success.
+	enteredBackoff := make(chan struct{})
+	releaseBackoff := make(chan struct{})
+	var backoffUsed atomic.Bool
+	m.retryDelay = func(attempt int) time.Duration {
+		if backoffUsed.CompareAndSwap(false, true) {
+			close(enteredBackoff)
+			<-releaseBackoff
+		}
+		return time.Millisecond
+	}
+
+	var onFailureCalled atomic.Bool
+	m.InitFromConfigAsync(context.Background(), func() { onFailureCalled.Store(true) })
+
+	// Wait until the async loop has failed once and is parked in backoff.
+	<-enteredBackoff
+	require.Equal(t, int32(1), attempt.Load(), "exactly one failed init attempt so far")
+
+	// Concurrently bring the backend to Running.
+	concurrentBackend := &stubBackend{}
+	m.swapBackend(concurrentBackend, stubStore, func() {}, nil,
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	require.Equal(t, status.Running, m.Status())
+
+	// Release the retry loop. Its next iteration must short-circuit at the top
+	// (backend already Running) and stop without running a full initCore.
+	close(releaseBackoff)
+
+	require.Eventually(t, func() bool {
+		return m.Status() != status.Starting
+	}, 2*time.Second, 10*time.Millisecond)
+
+	// Give the loop time to run (should be a no-op).
+	time.Sleep(300 * time.Millisecond)
+	assert.Same(t, concurrentBackend, m.Backend(),
+		"retry must not tear down and replace the concurrently-started backend")
+	assert.False(t, onFailureCalled.Load(), "onFailure must not fire")
+	// The loop must stop without running another full init against the live store.
+	assert.Equal(t, int32(1), attempt.Load(),
+		"retry loop must short-circuit instead of running further initCore attempts")
+}
+
+// TestManager_closeResources_RunsCleanupAndClosesAccountClient verifies that
+// closeResources releases both the init cleanup func and the account client,
+// which the superseded branch and teardown rely on to avoid leaking the SDK
+// connection and backend resources.
+func TestManager_closeResources_RunsCleanupAndClosesAccountClient(t *testing.T) {
+	m, _, _, _ := newTestManager(t)
+
+	var cleanupCalled atomic.Bool
+	cleanup := func() { cleanupCalled.Store(true) }
+	accountCli := &stubAccountClient{}
+
+	m.closeResources(cleanup, accountCli)
+
+	assert.True(t, cleanupCalled.Load(), "cleanup must be called")
+	assert.True(t, accountCli.Closed(), "account client must be closed")
+
+	// nil cleanup and nil account client must not panic.
+	m.closeResources(nil, nil)
+}
+
+// TestManager_recordInitFailure verifies the guard used by both sync and async
+// init: it fires onFailure only when no live backend exists and no concurrent
+// Restart is in progress. Once a concurrent Restart has brought the backend to
+// Running, it is a no-op. When a Restart is in flight, it is suppressed.
+// Regression for Kody finding: the non-atomic check-then-act guard could fire
+// onFailure (wiping onboarding access keys) after a live backend was started.
+func TestManager_recordInitFailure(t *testing.T) {
+	t.Run("no backend fires onFailure", func(t *testing.T) {
+		m, _, _, _ := newTestManager(t)
+		// Simulate the retry loop having set starting.
+		m.mu.Lock()
+		m.starting = true
+		m.mu.Unlock()
+
+		var onFailureCalled atomic.Bool
+		m.recordInitFailure("boom", func() { onFailureCalled.Store(true) })
+
+		assert.Equal(t, status.Error, m.Status())
+		assert.True(t, onFailureCalled.Load(), "onFailure must fire when no backend exists")
+	})
+
+	t.Run("already started is no-op", func(t *testing.T) {
+		m, _, _, _ := newTestManager(t)
+		// A concurrent Restart already brought the backend to Running.
+		live := &stubBackend{}
+		m.mu.Lock()
+		m.starting = false
+		m.backend = live
+		m.mu.Unlock()
+
+		var onFailureCalled atomic.Bool
+		m.recordInitFailure("boom", func() { onFailureCalled.Store(true) })
+
+		assert.Equal(t, status.Running, m.Status(),
+			"init error must not be recorded once the backend is Running")
+		assert.False(t, onFailureCalled.Load(), "onFailure must not fire after a successful restart")
+		assert.Same(t, live, m.Backend(), "live backend must be preserved")
+	})
+
+	t.Run("restart in progress is no-op", func(t *testing.T) {
+		m, _, _, _ := newTestManager(t)
+		m.mu.Lock()
+		m.starting = true
+		m.restarting = true
+		m.mu.Unlock()
+
+		var onFailureCalled atomic.Bool
+		m.recordInitFailure("boom", func() { onFailureCalled.Store(true) })
+
+		assert.False(t, onFailureCalled.Load(),
+			"onFailure must never fire while a concurrent Restart is in progress")
+		assert.True(t, m.starting, "init state must be left untouched for the in-flight restart")
+	})
+
+	t.Run("failed restart does not suppress onFailure", func(t *testing.T) {
+		m, _, _, _ := newTestManager(t)
+		// Simulate a failed concurrent Restart: starting was cleared,
+		// no backend exists, status is Error.
+		m.mu.Lock()
+		m.starting = false
+		m.initError = "restart failed"
+		m.mu.Unlock()
+
+		var onFailureCalled atomic.Bool
+		m.recordInitFailure("terminal init failure", func() { onFailureCalled.Store(true) })
+
+		assert.True(t, onFailureCalled.Load(),
+			"onFailure must fire even if starting was cleared by a failed Restart")
+		assert.Contains(t, m.InitError(), "terminal init failure")
+	})
+}
+
+// TestManager_recordInitFailure_HoldsLockAcrossOnFailure verifies that the
+// RLock is held across the onFailure callback, so a concurrent Restart cannot
+// bring the backend to Running in the window between the check and the
+// destructive callback. Uses TryLock (write lock) inside onFailure: if the
+// RLock is held (correct), TryLock returns false; if the RLock was released
+// early (bug), TryLock returns true and the test fails.
+// Regression for Kody findings 3827502641 / 3827502801: TOCTOU race.
+func TestManager_recordInitFailure_HoldsLockAcrossOnFailure(t *testing.T) {
+	m, _, _, _ := newTestManager(t)
+	m.mu.Lock()
+	m.starting = true
+	m.mu.Unlock()
+
+	var tryLockSucceeded atomic.Bool
+	var onFailureCalled atomic.Bool
+
+	m.recordInitFailure("boom", func() {
+		onFailureCalled.Store(true)
+		// Try to acquire a write lock. If the RLock is held (correct),
+		// TryLock returns false. If the RLock was NOT held (bug),
+		// TryLock returns true.
+		tryLockSucceeded.Store(m.mu.TryLock())
+		if tryLockSucceeded.Load() {
+			m.mu.Unlock()
+		}
+	})
+
+	assert.True(t, onFailureCalled.Load(), "onFailure must be called")
+	assert.False(t, tryLockSucceeded.Load(),
+		"RLock must be held during onFailure — TryLock must fail")
+}
+
+// TestManager_InitFromConfigAsync_AfterFailedRestart_SwapsInBackend verifies
+// that a successful retry is still swapped in after a concurrent Restart
+// FAILED (clearing starting but leaving no backend). The supersede guard must
+// only trigger when an actual backend is Running, otherwise self-heal is
+// silently broken.
+// Regression for Kody finding: the guard on !stillStarting alone discarded the
+// successful init after a failed restart, leaving status=Error with no backend.
+func TestManager_InitFromConfigAsync_AfterFailedRestart_SwapsInBackend(t *testing.T) {
+	m, st, factory, _ := newTestManager(t)
+	st.s3Cfg = config.S3Config{Directory: "/tmp/s3d"}
+
+	stubStore := &stubS3DStore{accessKeys: []AccessKeyInfo{
+		{AccessKeyID: "AKIA123", SecretKey: testSecretKey(), UserName: testUser},
+	}}
+	factory.openDBFn = func(dbPath string) (S3DStore, error) { return stubStore, nil }
+
+	var attempt atomic.Int32
+	factory.initFn = func(ctx context.Context, cfg config.S3Config, store S3DStore) (Backend, http.Handler, func(), error) {
+		if attempt.Add(1) == 1 {
+			return nil, nil, nil, errors.New("failed to check app auth: connection refused")
+		}
+		return &stubBackend{}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), func() {}, nil
+	}
+
+	enteredBackoff := make(chan struct{})
+	releaseBackoff := make(chan struct{})
+	var backoffUsed atomic.Bool
+	m.retryDelay = func(attempt int) time.Duration {
+		if backoffUsed.CompareAndSwap(false, true) {
+			close(enteredBackoff)
+			<-releaseBackoff
+		}
+		return time.Millisecond
+	}
+
+	var onFailureCalled atomic.Bool
+	m.InitFromConfigAsync(context.Background(), func() { onFailureCalled.Store(true) })
+
+	<-enteredBackoff
+
+	// Simulate a concurrent Restart that FAILED: clears starting, no backend,
+	// status=Error.
+	m.recordInitFailure("restart failed", nil)
+	require.Equal(t, status.Error, m.Status())
+	require.Nil(t, m.Backend())
+
+	// Subsequent retry attempts succeed; they must be swapped in.
+	retryBackend := &stubBackend{}
+	factory.initFn = func(ctx context.Context, cfg config.S3Config, store S3DStore) (Backend, http.Handler, func(), error) {
+		return retryBackend, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), func() {}, nil
+	}
+	close(releaseBackoff)
+
+	require.Eventually(t, func() bool {
+		return m.Status() == status.Running
+	}, 2*time.Second, 10*time.Millisecond)
+	time.Sleep(300 * time.Millisecond)
+	assert.Same(t, retryBackend, m.Backend(),
+		"successful retry must be swapped in after a failed concurrent restart")
+	assert.False(t, onFailureCalled.Load(), "onFailure must not fire")
+}
+
+// TestManager_InitFromConfigAsync_CancelAfterConcurrentRestart_KeepsRunning
+// verifies that cancelling initCtx (shutdown) after a concurrent successful
+// Restart already brought the backend to Running does not tear it down or mark
+// it Error. Regression for Kody finding: the context-cancellation branches in
+// the retry loop called failInit unconditionally, setting status=Error on a
+// live Running backend.
+func TestManager_InitFromConfigAsync_CancelAfterConcurrentRestart_KeepsRunning(t *testing.T) {
+	m, st, factory, _ := newTestManager(t)
+	st.s3Cfg = config.S3Config{Directory: "/tmp/s3d"}
+
+	stubStore := &stubS3DStore{accessKeys: []AccessKeyInfo{
+		{AccessKeyID: "AKIA123", SecretKey: testSecretKey(), UserName: testUser},
+	}}
+	factory.openDBFn = func(dbPath string) (S3DStore, error) { return stubStore, nil }
+
+	factory.initFn = func(ctx context.Context, cfg config.S3Config, store S3DStore) (Backend, http.Handler, func(), error) {
+		return nil, nil, nil, errors.New("failed to check app auth: connection refused")
+	}
+
+	enteredBackoff := make(chan struct{})
+	releaseBackoff := make(chan struct{})
+	var backoffUsed atomic.Bool
+	m.retryDelay = func(attempt int) time.Duration {
+		if backoffUsed.CompareAndSwap(false, true) {
+			close(enteredBackoff)
+			<-releaseBackoff
+		}
+		return time.Millisecond
+	}
+
+	var onFailureCalled atomic.Bool
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	m.InitFromConfigAsync(ctx, func() { onFailureCalled.Store(true) })
+
+	<-enteredBackoff
+
+	// Concurrent Restart brings the backend to Running.
+	concurrentBackend := &stubBackend{}
+	m.swapBackend(concurrentBackend, stubStore, func() {}, nil,
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	require.Equal(t, status.Running, m.Status())
+
+	// Shutdown cancels initCtx while the loop is parked in backoff.
+	cancel()
+	close(releaseBackoff)
+
+	require.Eventually(t, func() bool {
+		return m.Status() != status.Starting
+	}, 2*time.Second, 10*time.Millisecond)
+	time.Sleep(300 * time.Millisecond)
+
+	assert.Equal(t, status.Running, m.Status(),
+		"shutdown must not tear down a concurrently-started live backend")
+	assert.Same(t, concurrentBackend, m.Backend(), "live backend must be preserved")
+	assert.False(t, onFailureCalled.Load(), "onFailure must not fire on shutdown")
+}
+
+// TestManager_isTerminalInitError verifies terminal vs transient classification.
+func TestManager_isTerminalInitError(t *testing.T) {
+	terminal := []string{
+		"no app key set",
+		"no access keys",
+		"no such file or directory",
+		"permission denied",
+		"no indexer URL configured",
+		"backend init cancelled",
+		"unexpected sqlite store type",
+		"failed to create sia backend: some permanent failure",
+		"failed to create SDK client: missing app key",
+	}
+	transient := []string{
+		"failed to open database: database is locked",
+		"failed to open database: database is busy",
+		"failed to open database: file is temporarily unavailable",
+		"failed to check app auth: connection refused",
+		"dial tcp 1.2.3.4:5984: connect: connection refused",
+		"indexer request timed out",
+		"connection reset by peer",
+		"lookup indexer.lumeweb.com: no such host",
+		"read tcp 1.2.3.4:5984: i/o timeout",
+		"unexpected EOF",
+	}
+	for _, msg := range terminal {
+		assert.True(t, isTerminalInitError(errors.New(msg)), "expected terminal: %q", msg)
+	}
+	for _, msg := range transient {
+		assert.False(t, isTerminalInitError(errors.New(msg)), "expected transient: %q", msg)
+	}
+	// A network failure during SDK client creation is wrapped with %w
+	// preserving the underlying net.Error, so it must be treated as transient
+	// even though "failed to create SDK client" is a terminal substring.
+	netErrDuringSDK := fmt.Errorf("failed to create SDK client: %w",
+		&net.OpError{Op: "dial", Net: "tcp", Err: errors.New("connection refused")})
+	assert.False(t, isTerminalInitError(netErrDuringSDK), "wrapped net.Error during SDK client creation must be transient")
+	assert.False(t, isTerminalInitError(nil), "nil must not be terminal")
+}
+
+// TestManager_InitFromConfigAsync_MaxRetriesReached_FailsTerminally verifies
+// that a persistent non-terminal init failure is bounded: after
+// maxInitRetries attempts the async init stops retrying, surfaces the error
+// via failInit (setting status to error) and fires onFailure — it must not
+// retry forever.
+// Regression for Kody finding: permanent failures not matched by
+// isTerminalInitError left the backend stuck on 'starting' forever and never
+// fired onFailure (e.g. the onboarding wizard was never re-triggered).
+func TestManager_InitFromConfigAsync_MaxRetriesReached_FailsTerminally(t *testing.T) {
+	m, st, factory, _ := newTestManager(t)
+	st.s3Cfg = config.S3Config{Directory: "/tmp/s3d"}
+
+	factory.openDBFn = func(dbPath string) (S3DStore, error) {
+		return &stubS3DStore{accessKeys: []AccessKeyInfo{
+			{AccessKeyID: "AKIA123", SecretKey: testSecretKey(), UserName: testUser},
+		}}, nil
+	}
+	// Persistent, but NOT terminal by isTerminalInitError's substring rules —
+	// a non-terminal error forces the loop to retry to the maxInitRetries
+	// budget and exercise the budget-exhaustion branch (a terminal error like
+	// "permission denied" would exit on the first attempt instead).
+	factory.initFn = func(ctx context.Context, cfg config.S3Config, store S3DStore) (Backend, http.Handler, func(), error) {
+		return nil, nil, nil, errors.New("failed to check app auth: connection refused")
+	}
+
+	var attempts atomic.Int32
+	origInit := factory.initFn
+	factory.initFn = func(ctx context.Context, cfg config.S3Config, store S3DStore) (Backend, http.Handler, func(), error) {
+		attempts.Add(1)
+		return origInit(ctx, cfg, store)
+	}
+
+	m.retryDelay = func(attempt int) time.Duration { return time.Millisecond }
+
+	var onFailureCalled atomic.Bool
+	m.InitFromConfigAsync(context.Background(), func() { onFailureCalled.Store(true) })
+
+	// The loop must eventually stop retrying and go terminal.
+	require.Eventually(t, func() bool {
+		return m.Status() == status.Error
+	}, 5*time.Second, 10*time.Millisecond)
+
+	assert.True(t, onFailureCalled.Load(), "onFailure must fire after the retry budget is exhausted")
+	assert.LessOrEqual(t, attempts.Load(), int32(maxInitRetries),
+		"init must not exceed the retry budget")
+	assert.NotEmpty(t, m.InitError())
+}
+
+// TestManager_InitFromConfigAsync_RetryBackoffBounds verifies the backoff
+// schedule grows from the base and never exceeds the cap.
+func TestManager_InitFromConfigAsync_RetryBackoffBounds(t *testing.T) {
+	assert.Equal(t, initRetryBaseDelay, retryBackoff(0))
+	assert.Equal(t, initRetryBaseDelay*2, retryBackoff(1))
+	assert.LessOrEqual(t, retryBackoff(100), initRetryMaxDelay, "backoff must be capped")
+	assert.Equal(t, initRetryMaxDelay, retryBackoff(100), "long-running retries should sit at the cap")
+}
+
 // TestManager_InitFromConfigAsync_ReadsConfigInsideLock verifies that
 // s3Cfg is read inside the doInit closure (after restartMu is acquired),
 // not captured synchronously before the goroutine starts.
@@ -1307,9 +1972,7 @@ func TestManager_WithStore_ContextCancel_DoesNotFireOnFailure(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	m.InitAfterOnboardingAsync(ctx, &stubS3DStore{accessKeys: []AccessKeyInfo{
-		{AccessKeyID: "AKIA123", SecretKey: testSecretKey(), UserName: testUser},
-	}}, func() {
+	m.InitAfterOnboardingAsync(ctx, nil, func() {
 		onFailureCalled.Store(true)
 	})
 
@@ -1338,28 +2001,37 @@ func TestManager_InitFromConfigAsync_ColdStartFailure_PreservesOnboardingState(t
 	}}
 	factory.openDBFn = func(dbPath string) (S3DStore, error) { return stubStore, nil }
 	factory.initFn = func(ctx context.Context, cfg config.S3Config, store S3DStore) (Backend, http.Handler, func(), error) {
-		return nil, nil, nil, errors.New("indexer unreachable")
+		return nil, nil, nil, errors.New("failed to validate indexer: connection refused")
 	}
 
 	var onFailureCalled atomic.Bool
-	m.InitFromConfigAsync(context.Background(), func() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	m.InitFromConfigAsync(ctx, func() {
 		// In main.go, the cold-start onFailure only logs — it does NOT
-		// call ResetToAppKeySet. This test verifies the callback fires
-		// (so the caller can log) but the test's callback simulates the
-		// cold-start behavior by NOT resetting anything.
+		// call ResetToAppKeySet.
 		onFailureCalled.Store(true)
 	})
 
+	// A transient indexer failure is retried (not terminal): status stays
+	// starting and onFailure is not fired, so nothing can reset onboarding.
+	time.Sleep(50 * time.Millisecond)
+	assert.Equal(t, status.Starting, m.Status(),
+		"status must stay Starting while a transient failure is retried")
+	assert.False(t, onFailureCalled.Load(),
+		"onFailure must not fire for a retryable cold-start failure")
+
+	// Stop the retry loop via context cancellation.
+	cancel()
 	require.Eventually(t, func() bool {
 		return m.Status() != status.Starting
 	}, 2*time.Second, 10*time.Millisecond)
 
-	assert.True(t, onFailureCalled.Load(),
-		"onFailure must fire so the caller can log the failure")
-	assert.Equal(t, status.Error, m.Status(),
-		"status must be Error after failed init")
-	// The key assertion: access keys are still in the store (not wiped)
+	// The key assertion: access keys are still in the store (not wiped),
+	// and onFailure still never fired.
 	keys, err := stubStore.ListAccessKeys(nil)
 	require.NoError(t, err)
 	assert.Len(t, keys, 1, "production access keys must not be wiped on cold-start failure")
+	assert.False(t, onFailureCalled.Load(),
+		"onFailure must not fire on context cancellation")
 }
