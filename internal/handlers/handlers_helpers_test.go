@@ -40,6 +40,7 @@ func TestServices_RequireKeyStore_NotInitialized(t *testing.T) {
 	broker.Test(t)
 	broker.On("NotifyKeyChange", mock.Anything, mock.Anything).Return().Maybe()
 	broker.On("NotifyBucketChange", mock.Anything, mock.Anything).Return().Maybe()
+	broker.On("PublishFlush", mock.Anything).Return(nil).Maybe() // mock stub for SSE flush event, not a secret
 
 	svc := NewServices(ServicesConfig{
 		Store:     mockStore,

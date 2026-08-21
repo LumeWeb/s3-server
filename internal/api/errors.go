@@ -60,6 +60,7 @@ const (
 	TypeBucketCreateFailed     ErrorType = "BUCKET_CREATE_FAILED"
 	TypeBucketDeleteFailed     ErrorType = "BUCKET_DELETE_FAILED"
 	TypeFlushFailed            ErrorType = "FLUSH_FAILED"
+	TypeFlushAlreadyRunning    ErrorType = "FLUSH_ALREADY_RUNNING"
 	TypeUserListFailed         ErrorType = "USER_LIST_FAILED"
 	TypeAccessKeyListFailed    ErrorType = "ACCESS_KEY_LIST_FAILED"
 	TypeMonitoringStatsFailed  ErrorType = "MONITORING_STATS_FAILED"

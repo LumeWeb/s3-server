@@ -336,11 +336,11 @@ templ OnboardingContent(csrfToken string, publicKey string) {
 		<!-- Pre-define __siaReady as a pending promise so inline scripts can
 	     await it before the deferred module bundle finishes loading. -->
 		<script>
-		window.__siaReady = new Promise((resolve, reject) => {
-			window.__siaReadyResolve = resolve;
-			window.__siaReadyReject = reject;
-		});
-	</script>
+			window.__siaReady = new Promise((resolve, reject) => {
+				window.__siaReadyResolve = resolve;
+				window.__siaReadyReject = reject;
+			});
+		</script>
 		<!-- sodium + sia SDK + ky bundled by Vite (see web/src/onboarding.ts) -->
 	</div>
 }

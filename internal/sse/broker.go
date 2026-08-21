@@ -21,6 +21,7 @@ const (
 	TopicKeys      = "keys"
 	TopicBuckets   = "buckets"
 	TopicStats     = "stats"
+	TopicFlush     = "flush"
 
 	bufferCapacity    = 16
 	heartbeatInterval = 15 * time.Second
@@ -28,7 +29,7 @@ const (
 )
 
 // allTopics is the list every SSE client is subscribed to.
-var allTopics = []string{TopicDashboard, TopicKeys, TopicBuckets, TopicStats}
+var allTopics = []string{TopicDashboard, TopicKeys, TopicBuckets, TopicStats, TopicFlush}
 
 // DashboardEvent is the JSON payload pushed to the dashboard SSE topic.
 type DashboardEvent struct {
@@ -68,6 +69,22 @@ type StatsEvent struct {
 	AccountPinnedData       uint64 `json:"account_pinned_data"`
 	AccountPinnedSize       uint64 `json:"account_pinned_size"`
 	AccountReady            bool   `json:"account_ready"`
+}
+
+// FlushStatus represents the state of an async flush operation.
+type FlushStatus string
+
+const (
+	FlushStatusIdle     FlushStatus = "idle"
+	FlushStatusRunning  FlushStatus = "running"
+	FlushStatusComplete FlushStatus = "complete"
+	FlushStatusError    FlushStatus = "error"
+)
+
+// FlushEvent carries async flush status updates.
+type FlushEvent struct {
+	Status  FlushStatus `json:"status"`
+	Message string      `json:"message,omitempty"`
 }
 
 // StatsFetcher retrieves upload stats from the s3d admin API.
@@ -169,6 +186,18 @@ func (b *Broker) PublishStats(evt StatsEvent) error {
 		Type: TopicStats,
 		Data: data,
 	}, TopicStats)
+}
+
+// PublishFlush pushes a flush status event to all subscribers.
+func (b *Broker) PublishFlush(evt FlushEvent) error {
+	data, err := json.Marshal(evt)
+	if err != nil {
+		return err
+	}
+	return b.server.Publish(sseserver.Event{
+		Type: TopicFlush,
+		Data: data,
+	}, TopicFlush)
 }
 
 // NotifyKeyChange pushes a key change event.

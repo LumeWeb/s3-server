@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { settingsApp, changePasswordApp, versionCheckApp, navFlushApp } from '../src/pages/settings'
+import { settingsApp, changePasswordApp, versionCheckApp, navFlushApp, flushAllApp } from '../src/pages/settings'
 import { resetPasswordForm } from '../src/pages/reset_password'
 import { monitoringApp } from '../src/pages/monitoring'
 
@@ -303,5 +303,245 @@ describe('navFlushApp', () => {
     const c = createComponent(navFlushApp)
     // No form in the document — should not throw
     expect(() => c.confirmSignOut()).not.toThrow()
+  })
+
+  it('init registers sse:flush listener and syncs status', async () => {
+    const c = createComponent(navFlushApp)
+    const spy = vi.spyOn(window, 'addEventListener')
+    ;(window as any).__api = {
+      get: vi.fn().mockResolvedValue({ status: 'idle' }),
+    }
+    await c.init()
+    expect(spy).toHaveBeenCalledWith('sse:flush', expect.any(Function))
+    expect(c.flushPollTimer).toBeNull()
+  })
+
+  it('destroy removes listener and stops poll', async () => {
+    const c = createComponent(navFlushApp)
+    ;(window as any).__api = {
+      get: vi.fn().mockResolvedValue({ status: 'idle' }),
+    }
+    await c.init()
+    const spy = vi.spyOn(window, 'removeEventListener')
+    c.startFlushPoll()
+    c.destroy()
+    expect(c.flushPollTimer).toBeNull()
+    expect(spy).toHaveBeenCalledWith('sse:flush', expect.any(Function))
+  })
+
+  it('syncFlushStatus does not toast on stale complete status', async () => {
+    const c = createComponent(navFlushApp)
+    ;(window as any).__api = {
+      get: vi.fn().mockResolvedValue({ status: 'complete' }),
+    }
+    await c.syncFlushStatus()
+    expect(c.flushing).toBe(false)
+    expect(c.flushPollTimer).toBeNull()
+  })
+
+  it('syncFlushStatus does not toast on stale error status', async () => {
+    const c = createComponent(navFlushApp)
+    ;(window as any).__api = {
+      get: vi.fn().mockResolvedValue({ status: 'error', message: 'disk full' }),
+    }
+    await c.syncFlushStatus()
+    expect(c.flushing).toBe(false)
+    expect(c.flushPollTimer).toBeNull()
+  })
+
+  it('handleFlushEvent sets flushing=true on running and starts poll', () => {
+    const c = createComponent(navFlushApp)
+    c.handleFlushEvent({ status: 'running' })
+    expect(c.flushing).toBe(true)
+    expect(c.flushPollTimer).not.toBeNull()
+    c.stopFlushPoll()
+  })
+
+  it('handleFlushEvent sets flushing=false on complete and stops poll', () => {
+    const c = createComponent(navFlushApp)
+    c.flushing = true
+    c.startFlushPoll()
+    c.handleFlushEvent({ status: 'complete' })
+    expect(c.flushing).toBe(false)
+    expect(c.flushPollTimer).toBeNull()
+  })
+
+  it('handleFlushEvent sets flushing=false on error and stops poll', () => {
+    const c = createComponent(navFlushApp)
+    c.flushing = true
+    c.startFlushPoll()
+    c.handleFlushEvent({ status: 'error', message: 'disk full' })
+    expect(c.flushing).toBe(false)
+    expect(c.flushPollTimer).toBeNull()
+  })
+
+  it('startFlushPoll is idempotent', () => {
+    const c = createComponent(navFlushApp)
+    c.startFlushPoll()
+    const first = c.flushPollTimer
+    c.startFlushPoll()
+    expect(c.flushPollTimer).toBe(first)
+    c.stopFlushPoll()
+  })
+
+  it('stopFlushPoll clears timer', () => {
+    const c = createComponent(navFlushApp)
+    c.startFlushPoll()
+    expect(c.flushPollTimer).not.toBeNull()
+    c.stopFlushPoll()
+    expect(c.flushPollTimer).toBeNull()
+  })
+
+  it('syncFlushStatus sets flushing=true when status is running', async () => {
+    const c = createComponent(navFlushApp)
+    ;(window as any).__api = {
+      get: vi.fn().mockResolvedValue({ status: 'running' }),
+    }
+    await c.syncFlushStatus()
+    expect(c.flushing).toBe(true)
+    expect(c.flushPollTimer).not.toBeNull()
+    c.stopFlushPoll()
+  })
+
+  it('syncFlushStatus does not set flushing when status is idle', async () => {
+    const c = createComponent(navFlushApp)
+    ;(window as any).__api = {
+      get: vi.fn().mockResolvedValue({ status: 'idle' }),
+    }
+    await c.syncFlushStatus()
+    expect(c.flushing).toBe(false)
+    expect(c.flushPollTimer).toBeNull()
+  })
+
+  it('syncFlushStatus ignores errors', async () => {
+    const c = createComponent(navFlushApp)
+    ;(window as any).__api = {
+      get: vi.fn().mockRejectedValue(new Error('Network')),
+    }
+    await c.syncFlushStatus()
+    expect(c.flushing).toBe(false)
+    expect(c.flushPollTimer).toBeNull()
+  })
+
+  it('confirmFlush starts polling on success', async () => {
+    const c = createComponent(navFlushApp)
+    ;(window as any).__api = {
+      post: vi.fn().mockResolvedValue({ status: 'running' }),
+    }
+    await c.confirmFlush()
+    expect(c.flushing).toBe(true)
+    expect(c.flushPollTimer).not.toBeNull()
+    c.stopFlushPoll()
+  })
+
+  it('confirmFlush resets flushing on error when no flush is running', async () => {
+    const c = createComponent(navFlushApp)
+    ;(window as any).__api = {
+      post: vi.fn().mockResolvedValue(undefined),
+      get: vi.fn().mockResolvedValue({ status: 'idle' }),
+    }
+    await c.confirmFlush()
+    expect(c.flushing).toBe(false)
+    expect(c.flushPollTimer).toBeNull()
+  })
+
+  it('confirmFlush keeps flushing=true on 409 (already running)', async () => {
+    const c = createComponent(navFlushApp)
+    ;(window as any).__api = {
+      post: vi.fn().mockResolvedValue(undefined),
+      get: vi.fn().mockResolvedValue({ status: 'running' }),
+    }
+    await c.confirmFlush()
+    expect(c.flushing).toBe(true)
+    expect(c.flushPollTimer).not.toBeNull()
+    c.stopFlushPoll()
+  })
+})
+
+// --- Flush all app (settings page) ---
+
+describe('flushAllApp', () => {
+  it('returns correct initial state', () => {
+    const c = createComponent(flushAllApp)
+    expect(c.flushing).toBe(false)
+    expect(c.showFlushAll).toBe(false)
+  })
+
+  it('init registers sse:flush listener and syncs status', async () => {
+    const c = createComponent(flushAllApp)
+    const spy = vi.spyOn(window, 'addEventListener')
+    ;(window as any).__api = {
+      get: vi.fn().mockResolvedValue({ status: 'idle' }),
+    }
+    await c.init()
+    expect(spy).toHaveBeenCalledWith('sse:flush', expect.any(Function))
+    expect(c.flushing).toBe(false)
+  })
+
+  it('destroy removes listener', async () => {
+    const c = createComponent(flushAllApp)
+    ;(window as any).__api = {
+      get: vi.fn().mockResolvedValue({ status: 'idle' }),
+    }
+    await c.init()
+    const spy = vi.spyOn(window, 'removeEventListener')
+    c.destroy()
+    expect(spy).toHaveBeenCalledWith('sse:flush', expect.any(Function))
+  })
+
+  it('syncFlushStatus handles complete status', async () => {
+    const c = createComponent(flushAllApp)
+    ;(window as any).__api = {
+      get: vi.fn().mockResolvedValue({ status: 'complete' }),
+    }
+    await c.syncFlushStatus()
+    expect(c.flushing).toBe(false)
+  })
+
+  it('syncFlushStatus handles error status', async () => {
+    const c = createComponent(flushAllApp)
+    ;(window as any).__api = {
+      get: vi.fn().mockResolvedValue({ status: 'error', message: 'disk full' }),
+    }
+    await c.syncFlushStatus()
+    expect(c.flushing).toBe(false)
+  })
+
+  it('syncFlushStatus sets flushing=true when running', async () => {
+    const c = createComponent(flushAllApp)
+    ;(window as any).__api = {
+      get: vi.fn().mockResolvedValue({ status: 'running' }),
+    }
+    await c.syncFlushStatus()
+    expect(c.flushing).toBe(true)
+  })
+
+  it('confirmFlush keeps flushing=true on success', async () => {
+    const c = createComponent(flushAllApp)
+    ;(window as any).__api = {
+      post: vi.fn().mockResolvedValue({ status: 'running' }),
+    }
+    await c.confirmFlush()
+    expect(c.flushing).toBe(true)
+  })
+
+  it('confirmFlush resets flushing on error when no flush is running', async () => {
+    const c = createComponent(flushAllApp)
+    ;(window as any).__api = {
+      post: vi.fn().mockResolvedValue(undefined),
+      get: vi.fn().mockResolvedValue({ status: 'idle' }),
+    }
+    await c.confirmFlush()
+    expect(c.flushing).toBe(false)
+  })
+
+  it('confirmFlush keeps flushing=true on 409 (already running)', async () => {
+    const c = createComponent(flushAllApp)
+    ;(window as any).__api = {
+      post: vi.fn().mockResolvedValue(undefined),
+      get: vi.fn().mockResolvedValue({ status: 'running' }),
+    }
+    await c.confirmFlush()
+    expect(c.flushing).toBe(true)
   })
 })

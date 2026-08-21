@@ -1,15 +1,19 @@
 package handlers
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"fmt"
 	"math/big"
 	"net/http"
 
 	"github.com/labstack/echo/v5"
 	"go.lumeweb.com/s3-server/internal/api"
 	"go.lumeweb.com/s3-server/internal/config"
+	"go.lumeweb.com/s3-server/internal/sse"
 	"go.lumeweb.com/s3-server/internal/status"
+	"go.uber.org/zap"
 )
 
 func (s *Services) getS3Config(c *echo.Context) error {
@@ -160,20 +164,104 @@ func (s *Services) setLogConfig(c *echo.Context) error {
 	})
 }
 
-// systemFlush forces immediate upload of all pending (buffered locally) objects
-// to the Sia network, bypassing the normal batching/padding efficiency threshold,
-// then pins the uploaded objects so their local backup files can be removed.
-// This is a system-wide operation: it affects all objects across all buckets,
-// not a specific bucket. It does NOT delete any data.
+// systemFlush starts an asynchronous flush of all pending (buffered locally)
+// objects to the Sia network, bypassing the normal batching/padding efficiency
+// threshold, then pins the uploaded objects so their local backup files can be
+// removed. This is a system-wide operation: it affects all objects across all
+// buckets, not a specific bucket. It does NOT delete any data.
+//
+// The flush runs in a background goroutine with context.Background() so it is
+// not tied to the HTTP request lifecycle. This prevents timeouts when the
+// pending object backlog is large (e.g. 500K+ objects). Progress is visible
+// via the existing SSE stats events (pending_objects decreasing) and the
+// flush status SSE event.
 func (s *Services) systemFlush(c *echo.Context) error {
 	b, err := s.requireBackendOnly(c)
 	if err != nil {
 		return err
 	}
-	if err := b.FlushObjects(c.Request().Context()); err != nil {
-		return api.SendInternal(c, api.TypeFlushFailed, "failed to flush objects", err)
+
+	// Guard against concurrent flushes: only one at a time.
+	s.flushMu.Lock()
+	if s.flushStatus == sse.FlushStatusRunning {
+		s.flushMu.Unlock()
+		return api.SendError(c, api.ErrConflict, api.TypeFlushAlreadyRunning,
+			"a flush is already in progress", nil)
 	}
-	return c.NoContent(http.StatusNoContent)
+	s.flushStatus = sse.FlushStatusRunning
+	s.flushErr = ""
+	s.flushMu.Unlock()
+
+	// Publish flush-started event via SSE.
+	if s.sseBroker != nil {
+		_ = s.sseBroker.PublishFlush(sse.FlushEvent{
+			Status: sse.FlushStatusRunning,
+		})
+	}
+
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				s.log.Error("async flush panicked", zap.Any("panic", r))
+				s.flushMu.Lock()
+				s.flushStatus = sse.FlushStatusError
+				s.flushErr = fmt.Sprint(r)
+				s.flushMu.Unlock()
+				if s.sseBroker != nil {
+					_ = s.sseBroker.PublishFlush(sse.FlushEvent{
+						Status:  sse.FlushStatusError,
+						Message: fmt.Sprint(r),
+					})
+				}
+			}
+		}()
+		ctx := context.Background()
+		if err := b.FlushObjects(ctx); err != nil {
+			s.log.Error("async flush failed", zap.Error(err))
+			s.flushMu.Lock()
+			s.flushStatus = sse.FlushStatusError
+			s.flushErr = err.Error()
+			s.flushMu.Unlock()
+			if s.sseBroker != nil {
+				_ = s.sseBroker.PublishFlush(sse.FlushEvent{
+					Status:  sse.FlushStatusError,
+					Message: err.Error(),
+				})
+			}
+			return
+		}
+		s.log.Info("async flush completed")
+		s.flushMu.Lock()
+		s.flushStatus = sse.FlushStatusComplete
+		s.flushErr = ""
+		s.flushMu.Unlock()
+		if s.sseBroker != nil {
+			_ = s.sseBroker.PublishFlush(sse.FlushEvent{
+				Status: sse.FlushStatusComplete,
+			})
+		}
+	}()
+
+	return c.JSON(http.StatusAccepted, FlushStatusResponse{
+		Status:  string(sse.FlushStatusRunning),
+		Message: "Flush started. Monitor the monitoring page for progress.",
+	})
+}
+
+// getFlushStatus returns the current async flush status.
+// This is a read-only query — it does not mutate flushStatus.
+// The frontend stops polling when it observes a terminal status
+// (complete/error). A new flush POST resets to running.
+func (s *Services) getFlushStatus(c *echo.Context) error {
+	s.flushMu.Lock()
+	status := s.flushStatus
+	errMsg := s.flushErr
+	s.flushMu.Unlock()
+
+	return c.JSON(http.StatusOK, FlushStatusResponse{
+		Status:  string(status),
+		Message: errMsg,
+	})
 }
 
 func (s *Services) systemRestart(c *echo.Context) error {

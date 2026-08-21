@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	mock "github.com/stretchr/testify/mock"
+	"go.lumeweb.com/s3-server/internal/sse"
 )
 
 // NewMockSSEBroker creates a new instance of MockSSEBroker. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
@@ -126,6 +127,57 @@ func (_c *MockSSEBroker_NotifyKeyChange_Call) Return() *MockSSEBroker_NotifyKeyC
 
 func (_c *MockSSEBroker_NotifyKeyChange_Call) RunAndReturn(run func(action string, count int)) *MockSSEBroker_NotifyKeyChange_Call {
 	_c.Run(run)
+	return _c
+}
+
+// PublishFlush provides a mock function for the type MockSSEBroker
+func (_mock *MockSSEBroker) PublishFlush(evt sse.FlushEvent) error {
+	ret := _mock.Called(evt)
+
+	if len(ret) == 0 {
+		panic("no return value specified for PublishFlush")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(sse.FlushEvent) error); ok {
+		r0 = returnFunc(evt)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockSSEBroker_PublishFlush_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'PublishFlush'
+type MockSSEBroker_PublishFlush_Call struct {
+	*mock.Call
+}
+
+// PublishFlush is a helper method to define mock.On call
+//   - evt sse.FlushEvent
+func (_e *MockSSEBroker_Expecter) PublishFlush(evt interface{}) *MockSSEBroker_PublishFlush_Call {
+	return &MockSSEBroker_PublishFlush_Call{Call: _e.mock.On("PublishFlush", evt)}
+}
+
+func (_c *MockSSEBroker_PublishFlush_Call) Run(run func(evt sse.FlushEvent)) *MockSSEBroker_PublishFlush_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 sse.FlushEvent
+		if args[0] != nil {
+			arg0 = args[0].(sse.FlushEvent)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockSSEBroker_PublishFlush_Call) Return(err error) *MockSSEBroker_PublishFlush_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockSSEBroker_PublishFlush_Call) RunAndReturn(run func(evt sse.FlushEvent) error) *MockSSEBroker_PublishFlush_Call {
+	_c.Call.Return(run)
 	return _c
 }
 

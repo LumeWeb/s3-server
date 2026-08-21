@@ -12,6 +12,7 @@ import (
 	"go.lumeweb.com/s3-server/internal/api"
 	"go.lumeweb.com/s3-server/internal/backend"
 	"go.lumeweb.com/s3-server/internal/config"
+	"go.lumeweb.com/s3-server/internal/sse"
 	"go.lumeweb.com/s3-server/internal/status"
 	"go.lumeweb.com/s3-server/internal/store"
 	"go.lumeweb.com/s3-server/internal/updater"
@@ -239,7 +240,14 @@ type ServicesConfig struct {
 type SSEBroker interface {
 	NotifyKeyChange(action string, count int)
 	NotifyBucketChange(action, name string)
+	PublishFlush(evt sse.FlushEvent) error
 	ServeHTTP(w http.ResponseWriter, r *http.Request)
+}
+
+// FlushStatusResponse is returned by the GET /api/system/flush endpoint.
+type FlushStatusResponse struct {
+	Status  string `json:"status"`
+	Message string `json:"message,omitempty"`
 }
 
 type Services struct {
@@ -259,6 +267,12 @@ type Services struct {
 	sseBroker       SSEBroker
 	updater         UpdaterManager
 	keyMu           sync.RWMutex
+
+	// flush state: guarded by flushMu. When flushStatus is running,
+	// a new flush request returns 409 Conflict.
+	flushMu     sync.Mutex
+	flushStatus sse.FlushStatus
+	flushErr    string
 }
 
 // NewServices creates a Services instance from the given config.
@@ -279,6 +293,7 @@ func NewServices(cfg ServicesConfig) *Services {
 		csrfToken:       cfg.CSRFToken,
 		sseBroker:       cfg.SSEBroker,
 		updater:         cfg.UpdateManager,
+		flushStatus:     sse.FlushStatusIdle,
 	}
 }
 
@@ -326,6 +341,7 @@ func RegisterRoutes(g *echo.Group, svc *Services) {
 	g.PUT("/api/log-config", svc.setLogConfig)
 
 	g.POST("/api/system/flush", svc.systemFlush)
+	g.GET("/api/system/flush", svc.getFlushStatus)
 	g.POST("/api/system/restart", svc.systemRestart)
 	g.POST("/api/password/change", svc.changePassword)
 
