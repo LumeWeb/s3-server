@@ -79,6 +79,7 @@ jobs:
         run: make tsc
 
       - name: Install Playwright Chromium
+        working-directory: web
         run: bunx playwright install --with-deps chromium
 
       - name: Run browser tests
