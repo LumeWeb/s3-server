@@ -63,6 +63,12 @@ func TestRootToPanelRedirect(t *testing.T) {
 		assert.Equal(t, "/_panel/", rec.Header().Get("Location"))
 	})
 
+	t.Run("host-style localhost bucket root GET passes through", func(t *testing.T) {
+		rec := run(http.MethodGet, "/", "mybucket.localhost")
+		assert.Equal(t, http.StatusOK, rec.Code)
+		assert.Equal(t, "s3", rec.Body.String())
+	})
+
 	t.Run("non-root path passes through", func(t *testing.T) {
 		rec := run(http.MethodGet, "/mybucket", "example.com")
 		assert.Equal(t, http.StatusOK, rec.Code)

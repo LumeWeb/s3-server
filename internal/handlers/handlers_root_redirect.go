@@ -3,6 +3,7 @@ package handlers
 import (
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 )
 
@@ -44,11 +45,16 @@ func isS3RootRequest(r *http.Request, hostBases []string) bool {
 }
 
 // hostMatchesBucketBase reports whether host addresses a bucket as a subdomain
-// of one of the configured host bucket bases, mirroring the bucket-from-host
-// logic used by the S3 handler.
+// of one of the effective host bucket bases, mirroring the bucket-from-host
+// logic used by the S3 handler. Like s3d, "localhost" is always treated as a
+// base so virtual-host-style requests work out of the box during local
+// development.
 func hostMatchesBucketBase(host string, hostBases []string) bool {
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
+	}
+	if !slices.Contains(hostBases, "localhost") {
+		hostBases = append(hostBases, "localhost")
 	}
 	for _, base := range hostBases {
 		suffix := "." + strings.Trim(base, ".")
